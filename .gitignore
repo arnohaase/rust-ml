@@ -1,0 +1,6 @@
+data/mnist
+
+target
+
+*.iml
+.idea
