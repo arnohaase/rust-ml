@@ -1,7 +1,7 @@
 use std::cell::RefCell;
 use std::ops::Deref;
 use std::rc::Rc;
-use crate::linalg::{Matrix, Vector};
+use crate::linalg_initial::{Matrix, Vector};
 
 pub trait Layer {
     fn forward(&self, input: Rc<Vector>) -> Vector;

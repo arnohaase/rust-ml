@@ -6,9 +6,9 @@ use std::ops::Deref;
 use std::rc::Rc;
 use std::time::Instant;
 use crate::layer::{Dense, Layer, Tanh};
-use crate::linalg::Vector;
+use crate::linalg_initial::Vector;
 
-pub mod linalg;
+pub mod linalg_initial;
 pub mod layer;
 
 fn main() -> std::io::Result<()>{
