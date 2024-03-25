@@ -35,9 +35,9 @@ fn main() -> std::io::Result<()>{
 
     let mut num_predicted_correctly = 0;
     for ind in 0..x_test.len() {
-        let output = predict(&network, x_test[ind].r());
-        let predicted = arg_max(output);
-        let annotated = arg_max(y_test[ind].r());
+        let output = predict(&network, &x_test[ind]);
+        let predicted = arg_max(&output);
+        let annotated = arg_max(&y_test[ind]);
         if predicted == annotated {
             num_predicted_correctly += 1;
         }
@@ -82,7 +82,7 @@ fn read_mnist() -> std::io::Result<(Vec<Vector<f64>>,Vec<Vector<f64>>,Vec<Vector
     Ok((x_train, y_train, x_test, y_test))
 }
 
-fn arg_max(v: Vector<f64>) -> usize {
+fn arg_max(v: &Vector<f64>) -> usize {
     assert!(v.dim() > 0);
     let mut max_index = 0;
     let mut max_value = v.get(0);
@@ -98,7 +98,7 @@ fn arg_max(v: Vector<f64>) -> usize {
 }
 
 
-fn mse(actual: Vector<f64>, predicted: Vector<f64>) -> f64 {
+fn mse(actual: &Vector<f64>, predicted: &Vector<f64>) -> f64 {
     assert_eq!(actual.dim(), predicted.dim());
     let mut result = 0.0;
     for i in 0..actual.dim() {
@@ -108,18 +108,18 @@ fn mse(actual: Vector<f64>, predicted: Vector<f64>) -> f64 {
     result * (1.0 / (actual.dim() as f64))
 }
 
-fn mse_prime(actual: Vector<f64>, predicted: Vector<f64>) -> Vector<f64> {
+fn mse_prime(actual: &Vector<f64>, predicted: &Vector<f64>) -> Vector<f64> {
     assert_eq!(actual.dim(), predicted.dim());
 
-    let result = LinAlg::zero_vector(actual.dim());
+    let mut result = LinAlg::zero_vector(actual.dim());
     for i in 0..actual.dim() {
         result.set(i, 2.0 * (predicted.get(i) - actual.get(i)) / (actual.dim() as f64)); //TODO why divided by the dimension?
     }
     result
 }
 
-fn predict(network: &[Rc<RefCell<dyn Layer>>], input: Vector<f64>) -> Vector<f64> {
-    let mut output = input;
+fn predict(network: &[Rc<RefCell<dyn Layer>>], input: &Vector<f64>) -> Vector<f64> {
+    let mut output = input.clone(); //TODO clone?!
     for layer in network {
         output = layer.borrow().forward(output);
     }
@@ -128,8 +128,8 @@ fn predict(network: &[Rc<RefCell<dyn Layer>>], input: Vector<f64>) -> Vector<f64
 
 fn train(
     network: &[Rc<RefCell<dyn Layer>>],
-    loss: impl Fn(Vector<f64>, Vector<f64>) -> f64,
-    loss_prime: impl Fn(Vector<f64>, Vector<f64>) -> Vector<f64>,
+    loss: impl Fn(&Vector<f64>, &Vector<f64>) -> f64,
+    loss_prime: impl Fn(&Vector<f64>, &Vector<f64>) -> Vector<f64>,
     x_train: &Vec<Vector<f64>>,
     y_train: &Vec<Vector<f64>>,
     epochs: usize,
@@ -139,20 +139,21 @@ fn train(
     for e in 0..epochs {
         let mut error = 0.0;
 
-        for ind in 0..500 { //x_train.len() {
-            let x = x_train[ind].r();
-            let y = y_train[ind].r();
+        //TODO 500?
+        for ind in 0..50 { //x_train.len() {
+            let x = &x_train[ind];
+            let y = &y_train[ind];
 
-            let output = predict(network, x.r());
-            error += loss(y.r(), output.r());
+            let output = predict(network, x);
+            error += loss(y, &output);
 
-            let mut grad = loss_prime(y, output.r());
+            let mut grad = loss_prime(y, &output);
             for layer in network.iter().rev() {
                 grad = layer.borrow_mut().backward(grad, learning_rate);
             }
         }
 
-        error /= 500.0;
+        error /= 50.0;
         // error /= x_train.len() as f64;
         if verbose {
             println!("{:?}: epoch {e}/{epochs}: error {error}", Instant::now());

@@ -3,7 +3,7 @@ use std::fmt::{Debug, Display};
 use std::ops::{Add, Div, Mul, Sub};
 
 
-use crate::linalg::{LinAlgFactory, LinAlgMatrix, LinAlgVector, Matrix, Vector};
+use crate::linalg::{LinAlgFactory, RawMatrix, RawVector, Matrix, Vector};
 
 /// This is the implementation's public API to applications
 pub struct LinAlg {}
@@ -12,30 +12,30 @@ impl LinAlgFactory for LinAlg {
     // Add<Output=T>+Div<Output=T>+Mul<Output=T>+Sub<Output=T>
 
     fn initialized_matrix<T: Add<Output=T>+Div<Output=T>+Mul<Output=T>+Sub<Output=T> + Copy + Debug + Display + Default + 'static>(num_rows: usize, num_cols: usize, f: impl Fn(usize, usize) -> T) -> Matrix<T> {
-        Matrix::from_raw(Box::new(RawMatrix::new(num_rows, num_cols, f)))
+        Matrix::from_raw(Box::new(NaiveMatrix::new(num_rows, num_cols, f)))
     }
 
     fn initialized_vector<T: Add<Output=T>+Div<Output=T>+Mul<Output=T>+Sub<Output=T> + Copy + Debug + Display + Default + 'static>(dim: usize, f: impl Fn(usize) -> T) -> Vector<T> {
-        Vector::from_raw(Box::new(RawVector::new(dim, f)))
+        Vector::from_raw(Box::new(NaiveVector::new(dim, f)))
     }
 }
 
 #[derive(Clone, Debug)]
-struct RawMatrix<T: Add<Output=T>+Div<Output=T>+Mul<Output=T>+Sub<Output=T> + Copy + Debug + Display + Default + 'static> {
+struct NaiveMatrix<T: Add<Output=T>+Div<Output=T>+Mul<Output=T>+Sub<Output=T> + Copy + Debug + Display + Default + 'static> {
     num_rows: usize,
     num_cols: usize,
     /// organized by concatenating rows, row 0 followed by col 1 etc. - see Self::calc_index
     coefficients: Vec<T>,
 }
-impl <T: Add<Output=T>+Div<Output=T>+Mul<Output=T>+Sub<Output=T> + Copy + Debug + Display + Default + 'static> RawMatrix<T> {
-    fn new(num_rows: usize, num_cols: usize, f: impl Fn(usize, usize) -> T) -> RawMatrix<T> {
+impl <T: Add<Output=T>+Div<Output=T>+Mul<Output=T>+Sub<Output=T> + Copy + Debug + Display + Default + 'static> NaiveMatrix<T> {
+    fn new(num_rows: usize, num_cols: usize, f: impl Fn(usize, usize) -> T) -> NaiveMatrix<T> {
         let mut coefficients = Vec::new();
         for row in 0..num_rows {
             for col in 0..num_cols {
                 coefficients.push(f(row, col));
             }
         }
-        RawMatrix {
+        NaiveMatrix {
             num_rows,
             num_cols,
             coefficients,
@@ -46,7 +46,7 @@ impl <T: Add<Output=T>+Div<Output=T>+Mul<Output=T>+Sub<Output=T> + Copy + Debug 
         row * self.num_cols + col
     }
 }
-impl <T: Add<Output=T>+Div<Output=T>+Mul<Output=T>+Sub<Output=T> + Copy + Debug + Display + Default + 'static> LinAlgMatrix<T> for RawMatrix<T> {
+impl <T: Add<Output=T>+Div<Output=T>+Mul<Output=T>+Sub<Output=T> + Copy + Debug + Display + Default + 'static> RawMatrix<T> for NaiveMatrix<T> {
     fn as_any(&self) -> &dyn Any {
         self
     }
@@ -58,7 +58,7 @@ impl <T: Add<Output=T>+Div<Output=T>+Mul<Output=T>+Sub<Output=T> + Copy + Debug 
     fn num_cols(&self) -> usize {
         self.num_cols
     }
-    fn box_clone(&self) -> Box<dyn LinAlgMatrix<T>> {
+    fn box_clone(&self) -> Box<dyn RawMatrix<T>> {
         Box::new(self.clone())
     }
 
@@ -71,8 +71,8 @@ impl <T: Add<Output=T>+Div<Output=T>+Mul<Output=T>+Sub<Output=T> + Copy + Debug 
         self.coefficients[index] = new_value
     }
 
-    fn mult_with_vector(&self, rhs: &dyn LinAlgVector<T>) -> Box<dyn LinAlgVector<T>> {
-        let mut result = RawVector::new_zero(self.num_rows);
+    fn mult_with_vector(&self, rhs: &dyn RawVector<T>) -> Box<dyn RawVector<T>> {
+        let mut result = NaiveVector::new_zero(self.num_rows);
 
         for row in 0..self.num_rows {
             for col in 0..self.num_cols {
@@ -83,7 +83,7 @@ impl <T: Add<Output=T>+Div<Output=T>+Mul<Output=T>+Sub<Output=T> + Copy + Debug 
         Box::new(result)
     }
 
-    fn mult_with_scalar(&self, factor: T) -> Box<dyn LinAlgMatrix<T>> {
+    fn mult_with_scalar(&self, factor: T) -> Box<dyn RawMatrix<T>> {
         let mut result = self.clone();
         for i in 0..result.coefficients.len() {
             let new_value = result.coefficients[i] * factor;
@@ -92,20 +92,20 @@ impl <T: Add<Output=T>+Div<Output=T>+Mul<Output=T>+Sub<Output=T> + Copy + Debug 
         Box::new(result)
     }
 
-    fn plus_matrix(&self, rhs: &dyn LinAlgMatrix<T>) -> Box<dyn LinAlgMatrix<T>> {
+    fn plus_matrix(&self, rhs: &dyn RawMatrix<T>) -> Box<dyn RawMatrix<T>> {
         let mut result = self.clone();
         result.plus_matrix_in_place(rhs);
         Box::new(result)
     }
 
-    fn minus_matrix(&self, rhs: &dyn LinAlgMatrix<T>) -> Box<dyn LinAlgMatrix<T>> {
+    fn minus_matrix(&self, rhs: &dyn RawMatrix<T>) -> Box<dyn RawMatrix<T>> {
         let mut result = self.clone();
         result.minus_matrix_in_place(rhs);
         Box::new(result)
     }
 
-    fn plus_matrix_in_place(&mut self, rhs: &dyn LinAlgMatrix<T>) {
-        if let Some(naive) = rhs.as_any().downcast_ref::<RawMatrix<T>>() {
+    fn plus_matrix_in_place(&mut self, rhs: &dyn RawMatrix<T>) {
+        if let Some(naive) = rhs.as_any().downcast_ref::<NaiveMatrix<T>>() {
             for i in 0..self.coefficients.len() {
                 self.coefficients[i] = self.coefficients[i] + naive.coefficients[i];
             }
@@ -120,8 +120,8 @@ impl <T: Add<Output=T>+Div<Output=T>+Mul<Output=T>+Sub<Output=T> + Copy + Debug 
         }
     }
 
-    fn minus_matrix_in_place(&mut self, rhs: &dyn LinAlgMatrix<T>) {
-        if let Some(naive) = rhs.as_any().downcast_ref::<RawMatrix<T>>() {
+    fn minus_matrix_in_place(&mut self, rhs: &dyn RawMatrix<T>) {
+        if let Some(naive) = rhs.as_any().downcast_ref::<NaiveMatrix<T>>() {
             for i in 0..self.coefficients.len() {
                 self.coefficients[i] = self.coefficients[i] - naive.coefficients[i];
             }
@@ -136,12 +136,12 @@ impl <T: Add<Output=T>+Div<Output=T>+Mul<Output=T>+Sub<Output=T> + Copy + Debug 
         }
     }
 
-    fn transposed_times_vector(&self, rhs: &dyn LinAlgVector<T>) -> Box<dyn LinAlgVector<T>> {
+    fn transposed_times_vector(&self, rhs: &dyn RawVector<T>) -> Box<dyn RawVector<T>> {
         assert_eq!(self.num_rows, rhs.dim());
 
-        let mut result = RawVector::new_zero(self.num_cols);
+        let mut result = NaiveVector::new_zero(self.num_cols);
 
-        if let Some(naive) = rhs.as_any().downcast_ref::<RawVector<T>>() {
+        if let Some(naive) = rhs.as_any().downcast_ref::<NaiveVector<T>>() {
             for row in 0..self.num_rows {
                 for col in 0..self.num_cols {
                     let new_value = result.get(col) + self.get(row, col)*naive.get(row);
@@ -163,24 +163,24 @@ impl <T: Add<Output=T>+Div<Output=T>+Mul<Output=T>+Sub<Output=T> + Copy + Debug 
 }
 
 #[derive(Clone, Debug)]
-struct RawVector<T: Add<Output=T>+Div<Output=T>+Mul<Output=T>+Sub<Output=T> + Copy + Debug + Display + Default + 'static> {
+struct NaiveVector<T: Add<Output=T>+Div<Output=T>+Mul<Output=T>+Sub<Output=T> + Copy + Debug + Display + Default + 'static> {
     values: Vec<T>,
 }
-impl <T: Add<Output=T>+Div<Output=T>+Mul<Output=T>+Sub<Output=T> + Copy + Debug + Display + Default + 'static> RawVector<T> {
-    fn new(dim: usize, f: impl Fn(usize) -> T) -> RawVector<T> {
+impl <T: Add<Output=T>+Div<Output=T>+Mul<Output=T>+Sub<Output=T> + Copy + Debug + Display + Default + 'static> NaiveVector<T> {
+    fn new(dim: usize, f: impl Fn(usize) -> T) -> NaiveVector<T> {
         let mut values = Vec::new();
         for i in 0..dim {
             values.push(f(i));
         }
-        RawVector {
+        NaiveVector {
             values,
         }
     }
-    fn new_zero(dim: usize) -> RawVector<T> {
+    fn new_zero(dim: usize) -> NaiveVector<T> {
         Self::new(dim, |_| Default::default())
     }
 }
-impl <T: Add<Output=T>+Div<Output=T>+Mul<Output=T>+Sub<Output=T> + Copy + Debug + Display + Default + 'static> LinAlgVector<T> for RawVector<T> {
+impl <T: Add<Output=T>+Div<Output=T>+Mul<Output=T>+Sub<Output=T> + Copy + Debug + Display + Default + 'static> RawVector<T> for NaiveVector<T> {
     fn as_any(&self) -> &dyn Any {
         self
     }
@@ -190,7 +190,7 @@ impl <T: Add<Output=T>+Div<Output=T>+Mul<Output=T>+Sub<Output=T> + Copy + Debug 
         self.values.len()
     }
 
-    fn box_clone(&self) -> Box<dyn LinAlgVector<T>> {
+    fn box_clone(&self) -> Box<dyn RawVector<T>> {
         Box::new(self.clone())
     }
 
@@ -202,11 +202,11 @@ impl <T: Add<Output=T>+Div<Output=T>+Mul<Output=T>+Sub<Output=T> + Copy + Debug 
         self.values[index] = new_value
     }
 
-    fn multiply_element_wise(&self, rhs: &dyn LinAlgVector<T>) -> Box<dyn LinAlgVector<T>> {
+    fn multiply_element_wise(&self, rhs: &dyn RawVector<T>) -> Box<dyn RawVector<T>> {
         assert_eq!(self.dim(), rhs.dim());
         let mut result = self.clone();
 
-        if let Some(naive) = rhs.as_any().downcast_ref::<RawVector<T>>() {
+        if let Some(naive) = rhs.as_any().downcast_ref::<NaiveVector<T>>() {
             for i in 0..result.dim() {
                 let new_value = result.get(i) * naive.get(i);
                 result.set(i, new_value);
@@ -221,7 +221,7 @@ impl <T: Add<Output=T>+Div<Output=T>+Mul<Output=T>+Sub<Output=T> + Copy + Debug 
         Box::new(result)
     }
 
-    fn map(&self, f: &dyn Fn(T) -> T) -> Box<dyn LinAlgVector<T>> {
+    fn map(&self, f: &dyn Fn(T) -> T) -> Box<dyn RawVector<T>> {
         let mut result = self.clone();
         for i in 0..result.dim() {
             let new_value = f(result.get(i));
@@ -230,7 +230,7 @@ impl <T: Add<Output=T>+Div<Output=T>+Mul<Output=T>+Sub<Output=T> + Copy + Debug 
         Box::new(result)
     }
 
-    fn mult_with_scalar(&self, scalar: T) -> Box<dyn LinAlgVector<T>> {
+    fn mult_with_scalar(&self, scalar: T) -> Box<dyn RawVector<T>> {
         let mut result = self.clone();
         for i in 0..self.values.len() {
             let new_value = result.get(i) * scalar;
@@ -239,11 +239,11 @@ impl <T: Add<Output=T>+Div<Output=T>+Mul<Output=T>+Sub<Output=T> + Copy + Debug 
         Box::new(result)
     }
 
-    fn add_vec(&self, rhs: &dyn LinAlgVector<T>) -> Box<dyn LinAlgVector<T>> {
+    fn add_vec(&self, rhs: &dyn RawVector<T>) -> Box<dyn RawVector<T>> {
         assert_eq!(self.dim(), rhs.dim());
         let mut result = self.clone();
 
-        if let Some(naive) = rhs.as_any().downcast_ref::<RawVector<T>>() {
+        if let Some(naive) = rhs.as_any().downcast_ref::<NaiveVector<T>>() {
             for i in 0..result.dim() {
                 let new_value = result.get(i) + naive.get(i);
                 result.set(i, new_value);
@@ -258,8 +258,8 @@ impl <T: Add<Output=T>+Div<Output=T>+Mul<Output=T>+Sub<Output=T> + Copy + Debug 
         Box::new(result)
     }
 
-    fn minus_vec_in_place(&mut self, rhs: &dyn LinAlgVector<T>) {
-        if let Some(naive) = rhs.as_any().downcast_ref::<RawVector<T>>() {
+    fn minus_vec_in_place(&mut self, rhs: &dyn RawVector<T>) {
+        if let Some(naive) = rhs.as_any().downcast_ref::<NaiveVector<T>>() {
             for i in 0..self.values.len() {
                 self.values[i] = self.values[i] - naive.values[i];
             }
@@ -274,11 +274,11 @@ impl <T: Add<Output=T>+Div<Output=T>+Mul<Output=T>+Sub<Output=T> + Copy + Debug 
 
 
     //TODO move to Matrix
-    fn mult_with_transposed_vec(&self, rhs: &dyn LinAlgVector<T>) -> Box<dyn LinAlgMatrix<T>> {
+    fn mult_with_transposed_vec(&self, rhs: &dyn RawVector<T>) -> Box<dyn RawMatrix<T>> {
         let mut coefficients = Vec::new();
         let num_rows = self.dim();
         let num_cols;
-        if let Some(naive) = rhs.as_any().downcast_ref::<RawVector<T>>() {
+        if let Some(naive) = rhs.as_any().downcast_ref::<NaiveVector<T>>() {
             num_cols = naive.dim();
             for row in 0..num_rows {
                 for col in 0..num_cols {
@@ -295,7 +295,7 @@ impl <T: Add<Output=T>+Div<Output=T>+Mul<Output=T>+Sub<Output=T> + Copy + Debug 
             }
         }
 
-        Box::new(RawMatrix {
+        Box::new(NaiveMatrix {
             num_rows,
             num_cols,
             coefficients,

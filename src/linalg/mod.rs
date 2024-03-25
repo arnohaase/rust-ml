@@ -1,10 +1,8 @@
 pub mod naive;
 
 use std::any::Any;
-use std::cell::RefCell;
 use std::fmt::{Debug, Display};
 use std::ops::{Add, Div, Mul, Sub, SubAssign};
-use triomphe::Arc;
 
 
 
@@ -31,192 +29,179 @@ pub trait LinAlgFactory {
 
 
 pub struct Matrix<T> {
-    raw: Arc<RefCell<Box<dyn LinAlgMatrix<T>>>>,
+    raw: Box<dyn RawMatrix<T>>,
 }
 
 impl <T> Matrix<T> {
-    pub fn from_raw(raw: Box<dyn LinAlgMatrix<T>>) -> Matrix<T> {
+    pub fn from_raw(raw: Box<dyn RawMatrix<T>>) -> Matrix<T> {
         Matrix {
-            raw: Arc::new(RefCell::new(raw))
-        }
-    }
-
-    pub fn r(&self) -> Matrix<T> {
-        Matrix {
-            raw: self.raw.clone(),
-        }
-    }
-
-    pub fn copy(&self) -> Matrix<T> {
-        Matrix {
-            raw: Arc::new(RefCell::new(self.raw.borrow().box_clone())),
+            raw
         }
     }
 
     pub fn num_rows(&self) -> usize {
-        self.raw.borrow().num_rows()
+        self.raw.num_rows()
     }
     pub fn num_cols(&self) -> usize {
-        self.raw.borrow().num_cols()
+        self.raw.num_cols()
     }
 
     pub fn get(&self, row: usize, col: usize) -> T {
-        self.raw.borrow().get(row, col)
+        self.raw.get(row, col)
     }
-    pub fn set(&self, row: usize, col: usize, new_value: T) {
-        self.raw.borrow_mut().set(row, col, new_value)
+    pub fn set(&mut self, row: usize, col: usize, new_value: T) {
+        self.raw.set(row, col, new_value)
     }
 
     //TODO 'program' built from 'primitives'
-    pub fn transposed_times_vector(&self, rhs: Vector<T>) -> Vector<T> {
-        Vector::from_raw(self.raw.borrow().transposed_times_vector(rhs.raw.borrow().as_ref()))
+    pub fn transposed_times_vector(&self, rhs: &Vector<T>) -> Vector<T> {
+        Vector::from_raw(self.raw.transposed_times_vector(rhs.raw.as_ref()))
     }
 }
 
-impl <T> Mul<Vector<T>> for Matrix<T> {
+
+impl <T> Mul<&Vector<T>> for &Matrix<T> {
     type Output = Vector<T>;
 
-    fn mul(self, rhs: Vector<T>) -> Self::Output {
+    fn mul(self, rhs: &Vector<T>) -> Self::Output {
         assert_eq!(self.num_cols(), rhs.dim());
         //TODO lazy / deferred
-        Vector::from_raw(self.raw.borrow().mult_with_vector(rhs.raw.borrow().as_ref()))
+        Vector::from_raw(self.raw.mult_with_vector(rhs.raw.as_ref()))
     }
 }
 
-impl <T> Mul<T> for Matrix<T> {
+//TODO in-place for ownership based variant
+
+impl <T> Mul<T> for &Matrix<T> {
     type Output = Matrix<T>;
 
     fn mul(self, rhs: T) -> Self::Output {
         //TODO lazy / deferred
-        Matrix::from_raw(self.raw.borrow().mult_with_scalar(rhs))
+        Matrix::from_raw(self.raw.mult_with_scalar(rhs))
     }
 }
 
-impl <T> SubAssign<Matrix<T>> for Matrix<T> {
-    fn sub_assign(&mut self, rhs: Matrix<T>) {
+impl <T> SubAssign<&Matrix<T>> for Matrix<T> {
+    fn sub_assign(&mut self, rhs: &Matrix<T>) {
         assert_eq!(self.num_rows(), rhs.num_rows());
         assert_eq!(self.num_cols(), rhs.num_cols());
 
-        self.raw.borrow_mut().minus_matrix_in_place(rhs.raw.borrow().as_ref())
+        self.raw.minus_matrix_in_place(rhs.raw.as_ref())
     }
 }
 
 
 #[derive(Debug)]
 pub struct Vector<T> {
-    raw: Arc<RefCell<Box<dyn LinAlgVector<T>>>>,
+    raw: Box<dyn RawVector<T>>,
 }
 impl <T> Vector<T> {
-    fn from_raw(raw: Box<dyn LinAlgVector<T>>) -> Vector<T> {
+    fn from_raw(raw: Box<dyn RawVector<T>>) -> Vector<T> {
         Vector {
-            raw: Arc::new(RefCell::new(raw))
+            raw
         }
     }
-
-    pub fn r(&self) -> Vector<T> {
-        Vector {
-            raw: self.raw.clone(),
-        }
-    }
-
-    pub fn copy(&self) -> Vector<T> {
-        Self::from_raw(self.raw.borrow().box_clone())
-   }
 
     pub fn get(&self, index: usize) -> T {
-        self.raw.borrow().get(index)
+        self.raw.get(index)
     }
-    pub fn set(&self, index: usize, new_value: T) {
-        self.raw.borrow_mut().set(index, new_value)
+    pub fn set(&mut self, index: usize, new_value: T) {
+        self.raw.set(index, new_value)
     }
 
     pub fn dim(&self) -> usize {
-        self.raw.borrow().dim()
+        self.raw.dim()
     }
 
     //TODO pass references for non-consumed parameters?
-    pub fn mult_with_transposed_vec(&self, rhs: Vector<T>) -> Matrix<T> {
-        Matrix::from_raw(self.raw.borrow().mult_with_transposed_vec(rhs.raw.borrow().as_ref()))
+    pub fn mult_with_transposed_vec(&self, rhs: &Vector<T>) -> Matrix<T> {
+        Matrix::from_raw(self.raw.mult_with_transposed_vec(rhs.raw.as_ref()))
     }
 
     pub fn map(&self, f: impl Fn(T) -> T) -> Vector<T> {
-        Vector::from_raw(self.raw.borrow().map(&f))
+        Vector::from_raw(self.raw.map(&f))
     }
 
-    pub fn multiply_element_wise(&self, rhs: Vector<T>) -> Vector<T> {
-        Vector::from_raw(self.raw.borrow().multiply_element_wise(rhs.raw.borrow().as_ref()))
+    pub fn multiply_element_wise(&self, rhs: &Vector<T>) -> Vector<T> {
+        Vector::from_raw(self.raw.multiply_element_wise(rhs.raw.as_ref()))
+    }
+}
+
+impl <T> Clone for Vector<T> {
+    fn clone(&self) -> Self {
+        Vector::from_raw(self.raw.box_clone())
     }
 }
 
 //TODO syntactic sugar for indexed get / set syntax
 
-impl <T> Add<Vector<T>> for Vector<T> {
+impl <T> Add<&Vector<T>> for &Vector<T> {
     type Output = Vector<T>;
 
-    fn add(self, rhs: Vector<T>) -> Self::Output {
-        Vector::from_raw(self.raw.borrow().add_vec(rhs.raw.borrow().as_ref()))
+    fn add(self, rhs: &Vector<T>) -> Self::Output {
+        Vector::from_raw(self.raw.add_vec(rhs.raw.as_ref()))
     }
 }
 
-impl <T> Mul<T> for Vector<T> {
+impl <T> Mul<T> for &Vector<T> {
     type Output = Vector<T>;
 
     fn mul(self, rhs: T) -> Self::Output {
         //TODO lazy / deferred
-        Vector::from_raw(self.raw.borrow().mult_with_scalar(rhs))
+        Vector::from_raw(self.raw.mult_with_scalar(rhs))
     }
 }
 
-impl <T> SubAssign<Vector<T>> for Vector<T> {
-    fn sub_assign(&mut self, rhs: Vector<T>) {
+impl <T> SubAssign<&Vector<T>> for Vector<T> {
+    fn sub_assign(&mut self, rhs: &Vector<T>) {
         assert_eq!(self.dim(), rhs.dim());
-        self.raw.borrow_mut().minus_vec_in_place(rhs.raw.borrow().as_ref())
+        self.raw.minus_vec_in_place(rhs.raw.as_ref())
     }
 }
 
 
 
 
-trait LinAlgMatrix<T> {
+trait RawMatrix<T> {
     fn as_any(&self) -> &dyn Any;
 
     fn num_rows(&self) -> usize;
     fn num_cols(&self) -> usize;
 
-    fn box_clone(&self) -> Box<dyn LinAlgMatrix<T>>;
+    fn box_clone(&self) -> Box<dyn RawMatrix<T>>;
 
     fn get(&self, row: usize, col: usize) -> T;
     fn set(&mut self, row: usize, col: usize, new_value: T);
 
-    fn mult_with_vector(&self, rhs: &dyn LinAlgVector<T>) -> Box<dyn LinAlgVector<T>>;
-    fn mult_with_scalar(&self, rhs: T) -> Box<dyn LinAlgMatrix<T>>;
+    fn mult_with_vector(&self, rhs: &dyn RawVector<T>) -> Box<dyn RawVector<T>>;
+    fn mult_with_scalar(&self, rhs: T) -> Box<dyn RawMatrix<T>>;
 
-    fn plus_matrix(&self, rhs: &dyn LinAlgMatrix<T>) -> Box<dyn LinAlgMatrix<T>>;
-    fn minus_matrix(&self, rhs: &dyn LinAlgMatrix<T>) -> Box<dyn LinAlgMatrix<T>>;
-    fn plus_matrix_in_place(&mut self, rhs: &dyn LinAlgMatrix<T>);
-    fn minus_matrix_in_place(&mut self, rhs: &dyn LinAlgMatrix<T>);
+    fn plus_matrix(&self, rhs: &dyn RawMatrix<T>) -> Box<dyn RawMatrix<T>>;
+    fn minus_matrix(&self, rhs: &dyn RawMatrix<T>) -> Box<dyn RawMatrix<T>>;
+    fn plus_matrix_in_place(&mut self, rhs: &dyn RawMatrix<T>);
+    fn minus_matrix_in_place(&mut self, rhs: &dyn RawMatrix<T>);
 
-    fn transposed_times_vector(&self, rhs: &dyn LinAlgVector<T>) -> Box<dyn LinAlgVector<T>>; //TODO 'program' built from 'primitives'
+    fn transposed_times_vector(&self, rhs: &dyn RawVector<T>) -> Box<dyn RawVector<T>>; //TODO 'program' built from 'primitives'
 }
 
-trait LinAlgVector<T>: Debug {
+trait RawVector<T>: Debug {
     fn as_any(&self) -> &dyn Any;
 
     fn dim(&self) -> usize;
 
-    fn box_clone(&self) -> Box<dyn LinAlgVector<T>>;
+    fn box_clone(&self) -> Box<dyn RawVector<T>>;
 
     fn get(&self, i: usize) -> T;
     fn set(&mut self, i: usize, new_value: T);
 
-    fn multiply_element_wise(&self, rhs: &dyn LinAlgVector<T>) -> Box<dyn LinAlgVector<T>>;
-    fn map(&self, f: &dyn Fn(T) -> T) -> Box<dyn LinAlgVector<T>>;
-    fn mult_with_scalar(&self, scalar: T) -> Box<dyn LinAlgVector<T>>;
+    fn multiply_element_wise(&self, rhs: &dyn RawVector<T>) -> Box<dyn RawVector<T>>;
+    fn map(&self, f: &dyn Fn(T) -> T) -> Box<dyn RawVector<T>>;
+    fn mult_with_scalar(&self, scalar: T) -> Box<dyn RawVector<T>>;
 
-    fn add_vec(&self, rhs: &dyn LinAlgVector<T>) -> Box<dyn LinAlgVector<T>>;
-    fn mult_with_transposed_vec(&self, rhs: &dyn LinAlgVector<T>) -> Box<dyn LinAlgMatrix<T>>;
+    fn add_vec(&self, rhs: &dyn RawVector<T>) -> Box<dyn RawVector<T>>;
+    fn mult_with_transposed_vec(&self, rhs: &dyn RawVector<T>) -> Box<dyn RawMatrix<T>>;
 
-    fn minus_vec_in_place(&mut self, rhs: &dyn LinAlgVector<T>);
+    fn minus_vec_in_place(&mut self, rhs: &dyn RawVector<T>);
 }
 
 
