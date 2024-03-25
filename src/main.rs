@@ -139,7 +139,7 @@ fn train(
     for e in 0..epochs {
         let mut error = 0.0;
 
-        //TODO 500?
+        //TODO 500
         for ind in 0..50 { //x_train.len() {
             let x = &x_train[ind];
             let y = &y_train[ind];

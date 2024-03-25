@@ -74,6 +74,29 @@ impl Layer for Tanh {
     }
 }
 
+pub struct ReLu {
+    input: RefCell<Vector<f64>>,
+}
+impl ReLu {
+    pub fn new() -> ReLu {
+        ReLu {
+            input: RefCell::new(LinAlg::zero_vector(0)), //TODO
+        }
+    }
+}
+
+impl Layer for ReLu {
+    fn forward(&self, input: Vector<f64>) -> Vector<f64> {
+        let _ = self.input.replace(input.clone()); //TODO clone?!
+        input.map(|x| if x < 0.0 { 0.0 } else { x })
+    }
+
+    fn backward(&mut self, output_gradient: Vector<f64>, _learning_rate: f64) -> Vector<f64> {
+        let mapped = self.input.borrow().map(|x| if x < 0.0 { 0.0 } else { 1.0 });
+        output_gradient.multiply_element_wise(&mapped)
+    }
+}
+
 
 
 
