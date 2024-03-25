@@ -1,85 +1,76 @@
 use std::cell::RefCell;
-use std::ops::Deref;
-use std::rc::Rc;
-use crate::linalg_initial::{Matrix, Vector};
+use rand::random;
+
+use crate::linalg::*;
+use crate::linalg::naive::LinAlg;
 
 pub trait Layer {
-    fn forward(&self, input: Rc<Vector>) -> Vector;
+    fn forward(&self, input: Vector<f64>) -> Vector<f64>;
 
-    fn backward(&mut self, output_gradient: Rc<Vector>, learning_rate: f64) -> Vector;
+    fn backward(&mut self, output_gradient: Vector<f64>, learning_rate: f64) -> Vector<f64>;
 }
 
 
 pub struct Dense {
-    weights: Matrix,
-    bias: Vector,
-    input: RefCell<Option<Rc<Vector>>>,
+    weights: Matrix<f64>,
+    bias: Vector<f64>,
+    input: RefCell<Vector<f64>>,
 }
 impl Dense {
     pub fn new(num_in: usize, num_out: usize) -> Dense {
         Dense {
-            weights: Matrix::new_random(num_out, num_in),
-            bias: Vector::new_random(num_out),
-            input: Default::default(),
+            weights: LinAlg::initialized_matrix(num_out, num_in, |_,_| random::<f64>() * 2.0 - 1.0), // Matrix<f64>::new_random(num_out, num_in),
+            bias: LinAlg::initialized_vector(num_out, |_| random::<f64>() * 2.0 - 1.0), //Vector<f64>::new_random(num_out),
+            input: RefCell::new(LinAlg::zero_vector(0)), //TODO
         }
     }
 }
 
 impl Layer for Dense {
-    fn forward(&self, input: Rc<Vector>) -> Vector {
-        let _ = self.input.borrow_mut().insert(input.clone());
-        let a = &self.weights * input.deref();
-        a + &self.bias
+    fn forward(&self, input: Vector<f64>) -> Vector<f64> {
+        let _ = self.input.replace(input.r());
+        let a = self.weights.r() * input;
+        a + self.bias.r()
     }
 
-    fn backward(&mut self, output_gradient: Rc<Vector>, learning_rate: f64) -> Vector {
-        let weights_gradient = vec_times_transposed_vec(output_gradient.deref(), self.input.borrow().as_ref().unwrap().as_ref());
-        let input_gradient = self.weights.transposed_times(output_gradient.as_ref());
+    fn backward(&mut self, output_gradient: Vector<f64>, learning_rate: f64) -> Vector<f64> {
+        let weights_gradient = output_gradient.mult_with_transposed_vec(self.input.borrow().r());
+        let input_gradient = self.weights.transposed_times_vector(output_gradient.r());
 
-        self.weights -= &(&weights_gradient * learning_rate);
-        self.bias -= &(output_gradient.as_ref() * learning_rate);
+        // println!("{:?}", self.bias);
+        // println!("- {:?}", output_gradient);
+
+        self.weights -= weights_gradient * learning_rate;
+        self.bias -= output_gradient * learning_rate;
+
+        // println!("--> {:?}", self.bias);
+        // println!("----");
 
         input_gradient
     }
 }
 
-fn vec_times_transposed_vec(v1: &Vector, v2: &Vector) -> Matrix {
-    let mut result = Matrix::new_zero(v1.dim(), v2.dim());
-
-    for row in 0..v1.dim() {
-        for col in 0..v2.dim() {
-            result.coefficients[row*v1.dim() + col] = v1[row] * v2[col];
-        }
-    }
-    result
-}
-
 
 pub struct Tanh {
-    input: RefCell<Option<Rc<Vector>>>,
+    input: RefCell<Vector<f64>>,
 }
 impl Tanh {
     pub fn new() -> Tanh {
         Tanh {
-            input: Default::default(),
+            input: RefCell::new(LinAlg::zero_vector(0)), //TODO
         }
     }
 }
 
 impl Layer for Tanh {
-    fn forward(&self, input: Rc<Vector>) -> Vector {
-        let _ = self.input.borrow_mut().insert(input.clone());
-        let mut result = input.deref().clone();
-        for i in 0..result.dim() {
-            result[i] = result[i].tanh();
-        }
-        result
+    fn forward(&self, input: Vector<f64>) -> Vector<f64> {
+        let _ = self.input.replace(input.r());
+        input.map(|x| x.tanh())
     }
 
-    fn backward(&mut self, output_gradient: Rc<Vector>, _learning_rate: f64) -> Vector {
-        let input = self.input.borrow().as_ref().unwrap().clone();
-        let mapped = input.as_ref().map(|x| 1.0 - x.tanh()*x.tanh());
-        output_gradient.multiply_element_wise(&mapped)
+    fn backward(&mut self, output_gradient: Vector<f64>, _learning_rate: f64) -> Vector<f64> {
+        let mapped = self.input.borrow().map(|x| 1.0 - x.tanh()*x.tanh());
+        output_gradient.multiply_element_wise(mapped)
     }
 }
 

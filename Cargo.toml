@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 rand = "0"
+triomphe = "0.1"
 #mathru = "0"
 ### nalgebra = "0"
 #tract-linalg = "0"

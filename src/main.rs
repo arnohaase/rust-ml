@@ -1,14 +1,14 @@
 use std::cell::RefCell;
-use std::cmp::Ordering;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
-use std::ops::Deref;
 use std::rc::Rc;
 use std::time::Instant;
-use crate::layer::{Dense, Layer, Tanh};
-use crate::linalg_initial::Vector;
 
-pub mod linalg_initial;
+use crate::layer::{Dense, Layer, Tanh};
+use crate::linalg::naive::LinAlg;
+use crate::linalg::*;
+
+pub mod linalg;
 pub mod layer;
 
 fn main() -> std::io::Result<()>{
@@ -29,13 +29,15 @@ fn main() -> std::io::Result<()>{
         Rc::new(RefCell::new(Tanh::new())),
     ];
 
+    println!("start training at {:?}", Instant::now());
+
     train(&network, mse, mse_prime, &x_train, &y_train, 400, 0.001, true);
 
     let mut num_predicted_correctly = 0;
     for ind in 0..x_test.len() {
-        let output = predict(&network, x_test[ind].clone());
-        let predicted = arg_max(output.deref());
-        let annotated = arg_max(y_test[ind].deref());
+        let output = predict(&network, x_test[ind].r());
+        let predicted = arg_max(output);
+        let annotated = arg_max(y_test[ind].r());
         if predicted == annotated {
             num_predicted_correctly += 1;
         }
@@ -45,8 +47,8 @@ fn main() -> std::io::Result<()>{
     Ok(())
 }
 
-fn read_mnist() -> std::io::Result<(Vec<Rc<Vector>>,Vec<Rc<Vector>>,Vec<Rc<Vector>>,Vec<Rc<Vector>>,)> {
-    fn read_file(path: &str) -> std::io::Result<(Vec<Rc<Vector>>, Vec<Rc<Vector>>)> {
+fn read_mnist() -> std::io::Result<(Vec<Vector<f64>>,Vec<Vector<f64>>,Vec<Vector<f64>>,Vec<Vector<f64>>,)> {
+    fn read_file(path: &str) -> std::io::Result<(Vec<Vector<f64>>, Vec<Vector<f64>>)> {
         let file = File::open(path)?;
         let reader = BufReader::new(file);
 
@@ -62,15 +64,12 @@ fn read_mnist() -> std::io::Result<(Vec<Rc<Vector>>,Vec<Rc<Vector>>,Vec<Rc<Vecto
             let image_data = &parts[1..];
             assert_eq!(28*28, image_data.len());
 
-            let mut x = Vector::new_zero(28*28);
-            for ind in 0..image_data.len() {
-                x[ind] = (image_data[ind].parse::<u8>().unwrap() as f64) / 255.0;
-            }
-            all_x.push(Rc::new(x));
+            let x = LinAlg::initialized_vector(28*28, |ind| (image_data[ind].parse::<u8>().unwrap() as f64) / 255.0);
+            all_x.push(x);
 
-            let mut y = Vector::new_zero(10);
-            y[correct_digit.parse::<usize>().unwrap()] = 1.0;
-            all_y.push(Rc::new(y));
+            let correct_digit = correct_digit.parse::<usize>().unwrap();
+            let y = LinAlg::initialized_vector(10, |i| if i == correct_digit { 1.0 } else {0.0 });
+            all_y.push(y);
         }
 
         Ok((all_x, all_y))
@@ -83,49 +82,56 @@ fn read_mnist() -> std::io::Result<(Vec<Rc<Vector>>,Vec<Rc<Vector>>,Vec<Rc<Vecto
     Ok((x_train, y_train, x_test, y_test))
 }
 
-fn arg_max(v: &Vector) -> usize {
-    v.values.iter()
-        .enumerate()
-        .max_by(|a, b| PartialOrd::partial_cmp(a.1, b.1).unwrap_or(Ordering::Equal))
-        .map(|(index, _)| index)
-        .unwrap()
+fn arg_max(v: Vector<f64>) -> usize {
+    assert!(v.dim() > 0);
+    let mut max_index = 0;
+    let mut max_value = v.get(0);
+
+    for i in 1..v.dim() {
+        let cur_value = v.get(i);
+        if cur_value > max_value {
+            max_index = i;
+            max_value = cur_value;
+        }
+    }
+    max_index
 }
 
 
-fn mse(actual: &Vector, predicted: &Vector) -> f64 {
+fn mse(actual: Vector<f64>, predicted: Vector<f64>) -> f64 {
     assert_eq!(actual.dim(), predicted.dim());
     let mut result = 0.0;
     for i in 0..actual.dim() {
-        let diff = actual[i] - predicted[i];
+        let diff = actual.get(i) - predicted.get(i);
         result += diff*diff;
     }
     result * (1.0 / (actual.dim() as f64))
 }
 
-fn mse_prime(actual: &Vector, predicted: &Vector) -> Vector {
+fn mse_prime(actual: Vector<f64>, predicted: Vector<f64>) -> Vector<f64> {
     assert_eq!(actual.dim(), predicted.dim());
 
-    let mut result = Vector::new_zero(actual.dim());
+    let result = LinAlg::zero_vector(actual.dim());
     for i in 0..actual.dim() {
-        result[i] = 2.0 * (predicted[i] - actual[i]) / (actual.dim() as f64); //TODO why divided by the dimension?
+        result.set(i, 2.0 * (predicted.get(i) - actual.get(i)) / (actual.dim() as f64)); //TODO why divided by the dimension?
     }
     result
 }
 
-fn predict(network: &[Rc<RefCell<dyn Layer>>], input: Rc<Vector>) -> Rc<Vector> {
+fn predict(network: &[Rc<RefCell<dyn Layer>>], input: Vector<f64>) -> Vector<f64> {
     let mut output = input;
     for layer in network {
-        output = Rc::new(layer.borrow().forward(output));
+        output = layer.borrow().forward(output);
     }
     output
 }
 
 fn train(
     network: &[Rc<RefCell<dyn Layer>>],
-    loss: impl Fn(&Vector, &Vector) -> f64,
-    loss_prime: impl Fn(&Vector, &Vector) -> Vector,
-    x_train: &Vec<Rc<Vector>>,
-    y_train: &Vec<Rc<Vector>>,
+    loss: impl Fn(Vector<f64>, Vector<f64>) -> f64,
+    loss_prime: impl Fn(Vector<f64>, Vector<f64>) -> Vector<f64>,
+    x_train: &Vec<Vector<f64>>,
+    y_train: &Vec<Vector<f64>>,
     epochs: usize,
     learning_rate: f64,
     verbose: bool,
@@ -134,15 +140,15 @@ fn train(
         let mut error = 0.0;
 
         for ind in 0..500 { //x_train.len() {
-            let x = &x_train[ind];
-            let y = &y_train[ind];
+            let x = x_train[ind].r();
+            let y = y_train[ind].r();
 
-            let output = predict(network, x.clone());
-            error += loss(y, output.deref());
+            let output = predict(network, x.r());
+            error += loss(y.r(), output.r());
 
-            let mut grad = Rc::new(loss_prime(y, output.deref()));
+            let mut grad = loss_prime(y, output.r());
             for layer in network.iter().rev() {
-                grad = Rc::new(layer.borrow_mut().backward(grad, learning_rate));
+                grad = layer.borrow_mut().backward(grad, learning_rate);
             }
         }
 
