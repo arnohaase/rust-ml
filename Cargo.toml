@@ -10,4 +10,5 @@ triomphe = "0.1"
 ### nalgebra = "0"
 #tract-linalg = "0"
 
+#autograd = "2.0.0-rc3"
 

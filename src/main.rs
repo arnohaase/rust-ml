@@ -10,6 +10,8 @@ use crate::linalg::*;
 
 pub mod linalg;
 pub mod layer;
+mod model;
+mod tensor;
 
 fn main() -> std::io::Result<()>{
     println!("starting at {:?}", Instant::now());

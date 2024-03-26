@@ -5,6 +5,8 @@ use crate::linalg::*;
 use crate::linalg::naive::LinAlg;
 
 pub trait Layer {
+
+
     fn forward(&self, input: Vector<f64>) -> Vector<f64>;
 
     fn backward(&mut self, output_gradient: Vector<f64>, learning_rate: f64) -> Vector<f64>;
