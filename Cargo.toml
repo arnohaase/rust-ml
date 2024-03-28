@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+lazy_static = "1"
 rand = "0"
 triomphe = "0.1"
 #mathru = "0"
