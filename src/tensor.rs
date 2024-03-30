@@ -1,25 +1,52 @@
+use std::cmp::max;
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::fmt::{Debug, Display, Formatter};
 use std::marker::PhantomData;
-use std::ops::{Add, Div, Mul, Sub};
+use std::ops::{Add, Div, Mul, Neg, Sub};
 use std::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::atomic::Ordering::Acquire;
+
 use lazy_static::lazy_static;
+use rand::random;
 use triomphe::Arc;
 
 pub trait Float:
     Copy + Display + Debug +
+    PartialOrd +
     Add<Output=Self> + Sub<Output=Self> + Mul<Output=Self> + Div<Output=Self> +
-    From<u16>
+    Neg<Output=Self> +
+    From<u16> + From<f64>
 {
+    fn zero() -> Self;
     fn one() -> Self;
+    fn random_0_1() -> Self;
+
+    fn pow_i(self, i: u16) -> Self;
+
+    fn sin(self) -> Self;
 }
 
 impl Float for f64 {
+    fn zero() -> Self {
+        0.0
+    }
     fn one() -> f64 {
         1.0
+    }
+
+    fn random_0_1() -> f64 {
+        random()
+    }
+
+    fn pow_i(self, n: u16) -> Self {
+        self.powi(n as i32)
+    }
+
+
+    fn sin(self) -> f64 {
+        self.sin()
     }
 }
 
@@ -48,17 +75,78 @@ impl <F: Float> TensorEnv<F> {
         }
     }
 
-    pub fn create_scalar(&self, value: F) -> Tensor<F> {
-        self.assemble(Geometry::Scalar,vec![value])
+    pub fn scalar(&self, value: F) -> Tensor<F> {
+        self.assemble(Geometry::scalar(),vec![value])
+    }
+
+    pub fn vector(&self, values: Vec<F>) -> Tensor<F> {
+        assert!(values.len() > 0); //TODO ?!?!
+        self.assemble(Geometry::vector(values.len()), values)
+    }
+
+    pub fn random_lin(&self, min: F, max: F, dim: usize) -> Tensor<F> {
+        let mut data = Vec::with_capacity(dim);
+        for _ in 0..dim {
+            data.push(F::random_0_1() * (max-min) + min);
+        }
+        self.assemble(Geometry::vector(dim), data)
     }
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub enum Geometry { //TODO
-    Scalar,
-    Vector(usize),
-    // Matrix,
+#[derive(Clone, PartialEq, Eq)]
+pub struct Geometry(Vec<usize>);
+
+impl Debug for Geometry {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self.num_dims() {
+            0 => write!(f, "Scalar"),
+            1 => write!(f, "Vector{:?}", self.dims()),
+            2 => write!(f, "Matrix{:?}", self.dims()),
+            _ => write!(f, "Tensor{:?}", self.dims()),
+        }
+    }
 }
+
+impl Geometry {
+    pub fn scalar() -> Geometry {
+        Geometry (vec![])
+    }
+    pub fn vector(n: usize) -> Geometry {
+        Geometry (vec![n])
+    }
+
+    pub fn dims(&self) -> &[usize] {
+        &self.0
+    }
+    pub fn num_dims(&self) -> usize {
+        self.0.len()
+    }
+
+    pub fn compare_to(&self, other: &Geometry) -> GeometryComparisonResult { //TODO unit test
+        if self == other {
+            GeometryComparisonResult::Same
+        }
+        else if self.dims().ends_with(other.dims()) {
+            GeometryComparisonResult::SelfContainsOther(self.dims()[0..self.num_dims()-other.num_dims()].into())
+        }
+        else if other.dims().ends_with(self.dims()) {
+            GeometryComparisonResult::OtherContainsSelf(other.dims()[0..other.num_dims()-self.num_dims()].into())
+        }
+        else {
+            GeometryComparisonResult::Unrelated
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub enum GeometryComparisonResult {
+    Same,
+    SelfContainsOther(Vec<usize>),
+    OtherContainsSelf(Vec<usize>),
+    Unrelated,
+}
+
+
 
 #[derive(Clone)]
 pub struct Tensor<'env, F: Float> {
@@ -82,6 +170,41 @@ impl<'env, F: Float> Tensor<'env, F> {
         self.clone()
     }
 
+    /// Comparing floating point numbers for exact equality does not work much of the time due to
+    ///  rounding errors. This is a convenience function that compares two tensors element by
+    ///  element, returning true if each of the elements are equal within a heuristically chosen
+    ///  EPSILON.
+    ///
+    /// This method is intended as convenience functionality for unit tests.
+    pub fn is_pretty_much_equal_to(&self, other: &Tensor<'env, F>) -> bool {
+        let eps:F = 1e-8.into();
+
+        let equivalent_geometry =
+            self.geometry == other.geometry
+                || self.geometry == Geometry::scalar() && other.geometry == Geometry::vector(1)
+                || self.geometry == Geometry::vector(1) && other.geometry == Geometry::scalar()
+            ;
+
+        if !equivalent_geometry {
+            return false;
+        }
+
+        let t1 = self.read();
+        let t2 = other.read();
+        for i in 0..t1.len() {
+            let diff = t1[i] - t2[i];
+
+            if diff > eps || diff < -eps {
+                return false;
+            }
+        }
+        true
+    }
+
+    pub fn assert_is_pretty_much_equal_to(&self, other: &Tensor<'env, F>) {
+        assert!(self.is_pretty_much_equal_to(other), "not equal: {:?} != {:?}", self, &other);
+    }
+
     fn get_version(&self) -> u32 {
         self.version.fetch_add(0, Acquire)
     }
@@ -94,68 +217,123 @@ impl<'env, F: Float> Tensor<'env, F> {
     }
 
 
+    /// This handles mismatching geometries by lifting / iterating over outer dimensions
+    fn binary_operation(&self, other: &Tensor<'_, F>, f: impl Fn(&[F], &[F], &mut Vec<F>)) -> Tensor<'env, F> {
+        let t1 = self.read();
+        let t2 = other.read();
+
+        let mut result = Vec::with_capacity(max(t1.len(), t2.len()));
+
+        match self.geometry.compare_to(&other.geometry) {
+            GeometryComparisonResult::Same => {
+                f(&t1, &t2, &mut result);
+                self.env.assemble(self.geometry.clone(), result)
+            }
+            GeometryComparisonResult::SelfContainsOther(dims) => {
+                let num: usize = dims.iter().product();
+                for n in 0..num {
+                    let offs = n * t2.len();
+                    f(&t1[offs..offs+t2.len()], &t2, &mut result);
+                }
+                self.env.assemble(self.geometry.clone(), result)
+            }
+            GeometryComparisonResult::OtherContainsSelf(dims) => {
+                let num: usize = dims.iter().product();
+                for n in 0..num {
+                    let offs = n * t1.len();
+                    f(&t1, &t2[offs..offs+t1.len()], &mut result);
+                }
+                self.env.assemble(other.geometry.clone(), result)
+            }
+            GeometryComparisonResult::Unrelated => {
+                panic!("incompatible geometries"); //TODO
+            }
+        }
+    }
+
+
     pub fn plus(&self, other: Tensor<'env, F>, tracker: &dyn ExecutionTracker<'env, F>) -> Tensor<'env, F> {
         tracker.calc(TrackerExpression::Two(self.r(), other, Box::new(PlusOp{})))
     }
-    fn _plus(&self, other: Tensor<'_, F>) -> Tensor<'env, F> {
-        assert_eq!(self.geometry, other.geometry);
-        let v1 = self.read();
-        let v2 = other.read();
+    fn _plus(&self, rhs: Tensor<'_, F>) -> Tensor<'env, F> {
+        self.binary_operation(&rhs, |a, b, result| {
+            for i in 0..a.len() {
+                result.push(a[i] + b[i]);
+            }
+        })
+    }
 
-        let mut data = Vec::with_capacity(v1.len());
-        for i in 0..v1.len() {
-            data.push(v1[i] + v2[i]);
+    pub fn minus(&self, other: Tensor<'env, F>, tracker: &dyn ExecutionTracker<'env, F>) -> Tensor<'env, F> {
+        tracker.calc(TrackerExpression::Two(self.r(), other, Box::new(MinusOp{})))
+    }
+    fn _minus(&self, rhs: Tensor<'_, F>) -> Tensor<'env, F> {
+        self.binary_operation(&rhs, |a, b, result| {
+            for i in 0..a.len() {
+                result.push(a[i] - b[i]);
+            }
+        })
+    }
+
+    fn sum(&self, tracker: &dyn ExecutionTracker<'env, F>) -> Tensor<'env, F> {
+        tracker.calc(TrackerExpression::Single(self.r(), Box::new(SumOp{}))) //TODO convenience API
+    }
+    fn _sum(&self) -> Tensor<'env, F> {
+        let mut result = F::zero();
+
+        for &x in self.read().iter() {
+            result = result + x;
         }
-        self.env.assemble(self.geometry, data)
+        self.env.scalar(result)
     }
 
-    pub fn mult_with_scalar(&self, scalar: Tensor<'env, F>, tracker: &dyn ExecutionTracker<'env, F>) -> Tensor<'env, F> { //TODO generalize - this is just to get an initial example to work
-        tracker.calc(TrackerExpression::Two(self.r(), scalar, Box::new(MultWithScalarOp{})))
-    }
-    fn _mult_with_scalar(&self, scalar: Tensor<'_, F>) -> Tensor<'env, F> { //TODO generalize - this is just to get an initial example to work
-        assert_eq!(scalar.geometry, Geometry::Scalar);
-
-        let scalar = scalar.read()[0];
-        let v1 = self.read();
-
-        let mut data = Vec::with_capacity(v1.len());
-        for &x in v1.iter() {
-            data.push(x*scalar);
-        }
-        self.env.assemble(self.geometry, data)
+    pub fn mult(&self, rhs: Tensor<'env, F>, tracker: &dyn ExecutionTracker<'env, F>) -> Tensor<'env, F> {
+        tracker.calc(TrackerExpression::Two(self.r(), rhs, Box::new(MultOp{})))
     }
 
-    pub fn mult_element_wise(&self, rhs: Tensor<'env, F>, tracker: &dyn ExecutionTracker<'env, F>) -> Tensor<'env, F> { //TODO generalize - this is just to get an initial example to work
-        tracker.calc(TrackerExpression::Two(self.r(), rhs, Box::new(MultElementWiseOp{})))
-    }
-
-    fn _mult_element_wise(&self, rhs: Tensor<'_, F>) -> Tensor<'env, F> { //TODO generalize - this is just to get an initial example to work
-        assert_eq!(self.geometry, rhs.geometry);
-        let v1 = self.read();
-        let v2 = rhs.read();
-
-        let mut data = Vec::with_capacity(v1.len());
-        for i in 0..v1.len() {
-            data.push(v1[i] * v2[i]);
-        }
-
-        self.env.assemble(self.geometry, data)
+    fn _mult(&self, rhs: Tensor<'_, F>) -> Tensor<'env, F> {
+        self.binary_operation(&rhs, |a, b, result| {
+            for i in 0..a.len() {
+                result.push(a[i] * b[i]);
+            }
+        })
     }
 
     pub fn pow_int(&self, exp: u16, tracker: &dyn ExecutionTracker<'env, F>) -> Tensor<'env, F> {
-        tracker.calc(TrackerExpression::Single(self.r(), Box::new(PowInt(exp))))
+        tracker.calc(TrackerExpression::Single(self.r(), Box::new(PowInt { exp })))
     }
     pub fn _pow_int(&self, exp: u16) -> Tensor<'env, F> {
         let v1 = self.read();
         let mut data = Vec::with_capacity(v1.len());
         for &x in v1.iter() {
-            let mut value = x;
-            for _ in 1..exp { //TODO this is hacky and inefficient, to get an example running early on
-                value = value * x;
+            match exp {
+                0 => data.push(F::one()),
+                1 => data.push(x),
+                2 => data.push(x*x),
+                3 => data.push(x*x*x),
+                _ => data.push(x.pow_i(exp)), //TODO up to what exponent is multiplying more efficient?
             }
-            data.push(value);
         }
-        self.env.assemble(self.geometry, data)
+        self.env.assemble(self.geometry.clone(), data)
+    }
+
+    //TODO sin()
+    pub fn _sin(&self) -> Tensor<'env, F> {
+        let v1 = self.read();
+        let mut data = Vec::with_capacity(v1.len());
+        for &x in v1.iter() {
+            data.push(x.sin());
+        }
+        self.env.assemble(self.geometry.clone(), data)
+    }
+
+    pub fn _sub_in_place(&self, other: Tensor<'env, F>) {
+        //TODO assert / lift geometry
+        let mut data = self.write();
+        let mut other = other.read();
+
+        for i in 0..data.len() {
+            data[i] = data[i] - other[i];
+        }
     }
 }
 
@@ -215,7 +393,7 @@ impl <'env, F: Float> ExecutionTracker<'env, F> for RegularExecutionTracker<'env
             //TODO multi-dim? well-known ONE tensor?
 
 
-            return Some(calculated.env.create_scalar(F::one()));
+            return Some(calculated.env.scalar(F::one()));
         }
 
 
@@ -244,12 +422,13 @@ impl <'env, F: Float> ExecutionTracker<'env, F> for RegularExecutionTracker<'env
                     if let Some(inner_grad) = inner_grad {
                         //TODO assert that the inner gradient matches the number of ultimate input vars
 
-                        let outer_grad = op.grad(t.r());
-                        assert_eq!(inner_grad.geometry, outer_grad.geometry, "outer and inner gradients have different geometries, this is a bug in rust-ml");
-
-                        // multiply outer and inner gradient per element, i.e. apply the
-                        //  chain rule per element
-                        return Some(outer_grad._mult_element_wise(inner_grad));
+                        return Some(op.grad(t.r(), inner_grad));
+                        // let outer_grad = op.grad(t.r(), inner_grad);
+                        // {
+                        //     multiply outer and inner gradient per element, i.e. apply the
+                        //      chain rule per element
+                            // return Some(outer_grad._mult(inner_grad));
+                        // }
                     }
                     else {
                         return None
@@ -270,7 +449,7 @@ impl <'env, F: Float> ExecutionTracker<'env, F> for RegularExecutionTracker<'env
     }
 }
 
-enum TrackerExpression<'env, F: Float> {
+pub enum TrackerExpression<'env, F: Float> {
     Single(Tensor<'env, F>, Box<dyn SingleTensorOp<F>>),
     Two(Tensor<'env, F>, Tensor<'env, F>, Box<dyn TwoTensorOp<F>>),
 }
@@ -285,53 +464,37 @@ impl <'env, F: Float> TrackerExpression<'env, F> {
 
 pub trait SingleTensorOp<F: Float> {
     fn apply<'env>(&self, t: Tensor<'env, F>) -> Tensor<'env, F>;
-    fn grad<'env>(&self, t: Tensor<'env, F>) -> Tensor<'env, F>;
+    fn grad<'env>(&self, t: Tensor<'env, F>, t_grad: Tensor<'env, F>) -> Tensor<'env, F>;
 }
 pub trait TwoTensorOp<F: Float> {
     fn apply<'env>(&self, t1: Tensor<'env, F>, t2: Tensor<'env, F>) -> Tensor<'env, F>;
     fn grad<'env>(&self, t1: Tensor<'env, F>, grad1: Option<Tensor<'env, F>>, t2: Tensor<'env, F>, grad2: Option<Tensor<'env, F>>) -> Option<Tensor<'env, F>>;
 }
 
-pub struct PowInt(u16);
+pub struct PowInt {
+    exp: u16
+}
 impl <F: Float> SingleTensorOp<F> for PowInt {
     //TODO limit to exp > 1 - create to other 'single' ops instead
 
     fn apply<'env>(&self, t: Tensor<'env, F>) -> Tensor<'env, F> {
-        t._pow_int(self.0)
+        t._pow_int(self.exp)
     }
-    fn grad<'env>(&self, t: Tensor<'env, F>) -> Tensor<'env, F> {
-        t._pow_int(self.0 - 1)._mult_with_scalar(t.env.create_scalar(self.0.into()))
-    }
-}
-
-pub struct MultElementWiseOp{}
-impl <F: Float> TwoTensorOp<F> for MultElementWiseOp {
-    fn apply<'env>(&self, t1: Tensor<'env, F>, t2: Tensor<'env, F>) -> Tensor<'env, F> {
-        t1._mult_element_wise(t2)
-    }
-
-    fn grad<'env>(&self, t1: Tensor<'env, F>, grad1: Option<Tensor<'env, F>>, t2: Tensor<'env, F>, grad2: Option<Tensor<'env, F>>) -> Option<Tensor<'env, F>> {
-        let term1 = grad1.map(|grad1| grad1._mult_element_wise(t2.r()));
-        let term2 = grad2.map(|grad2| t1._mult_element_wise(grad2));
-
-        match (term1, term2) {
-            (None, None) => None,
-            (Some(t1), None) => Some(t1),
-            (None, Some(t2)) => Some(t2),
-            (Some(t1), Some(t2)) => Some(t1._plus(t2))
-        }
+    fn grad<'env>(&self, t: Tensor<'env, F>, t_grad: Tensor<'env, F>) -> Tensor<'env, F> {
+        let outer_grad = t._pow_int(self.exp - 1)._mult(t.env.scalar(self.exp.into()));
+        outer_grad._mult(t_grad)
     }
 }
 
-pub struct MultWithScalarOp{}
-impl <F: Float> TwoTensorOp<F> for MultWithScalarOp {
+pub struct MultOp{}
+impl <F: Float> TwoTensorOp<F> for MultOp {
     fn apply<'env>(&self, t1: Tensor<'env, F>, t2: Tensor<'env, F>) -> Tensor<'env, F> {
-        t1._mult_with_scalar(t2)
+        t1._mult(t2)
     }
 
     fn grad<'env>(&self, t1: Tensor<'env, F>, grad1: Option<Tensor<'env, F>>, t2: Tensor<'env, F>, grad2: Option<Tensor<'env, F>>) -> Option<Tensor<'env, F>> {
-        let term1 = grad1.map(|grad1| grad1._mult_with_scalar(t2.r()));
-        let term2 = grad2.map(|grad2| t1._mult_with_scalar(grad2));
+        let term1 = grad1.map(|grad1| grad1._mult(t2.r()));
+        let term2 = grad2.map(|grad2| t1._mult(grad2));
 
         match (term1, term2) {
             (None, None) => None,
@@ -358,52 +521,196 @@ impl <F: Float> TwoTensorOp<F> for PlusOp {
     }
 }
 
+pub struct MinusOp{}
+impl <F: Float> TwoTensorOp<F> for MinusOp {
+    fn apply<'env>(&self, t1: Tensor<'env, F>, t2: Tensor<'env, F>) -> Tensor<'env, F> {
+        t1._minus(t2)
+    }
+
+    fn grad<'env>(&self, t1: Tensor<'env, F>, grad1: Option<Tensor<'env, F>>, t2: Tensor<'env, F>, grad2: Option<Tensor<'env, F>>) -> Option<Tensor<'env, F>> {
+        match (grad1, grad2) {
+            (None, None) => None,
+            (Some(t1), None) => Some(t1),
+            (None, Some(t2)) => Some(t2),
+            (Some(t1), Some(t2)) => Some(t1._minus(t2))
+        }
+    }
+}
+
+pub struct SumOp{}
+impl <F: Float> SingleTensorOp<F> for SumOp {
+
+    fn apply<'env>(&self, t: Tensor<'env, F>) -> Tensor<'env, F> {
+        //TODO generalize to n-dim -> (n-1)-dim?
+        t._sum()
+    }
+
+    fn grad<'env>(&self, _t: Tensor<'env, F>, t_grad: Tensor<'env, F>) -> Tensor<'env, F> {
+        t_grad._sum()
+    }
+}
+
 
 #[cfg(test)]
 mod test {
+    use std::f64::consts::PI;
+
+    use rstest::*;
+
     use super::*;
 
-    #[test]
-    fn test_play_around() {
+    #[rstest]
+    #[case(vec![0.0], 2, vec![0.0], vec![0.0])]
+    #[case(vec![1.0], 2, vec![1.0], vec![2.0])]
+    #[case(vec![2.0], 2, vec![4.0], vec![4.0])]
+    #[case(vec![3.0], 2, vec![9.0], vec![6.0])]
+
+    #[case(vec![0.0], 3, vec![0.0], vec![0.0])]
+    #[case(vec![1.0], 3, vec![1.0], vec![3.0])]
+    #[case(vec![2.0], 3, vec![8.0], vec![12.0])]
+    #[case(vec![3.0], 3, vec![27.0], vec![27.0])]
+
+    #[case(vec![0.0, 1.0, 2.0, 3.0], 2, vec![0.0, 1.0, 4.0,  9.0], vec![0.0, 2.0,  4.0,  6.0])]
+    #[case(vec![0.0, 1.0, 2.0, 3.0], 3, vec![0.0, 1.0, 8.0, 27.0], vec![0.0, 3.0, 12.0, 27.0])]
+    fn test_pow_int(#[case] x: Vec<f64>, #[case] pow: u16, #[case] y_expected: Vec<f64>, #[case] grad_expected: Vec<f64>) {
+        assert_eq!(x.len(), y_expected.len());
+        assert_eq!(x.len(), grad_expected.len());
+
         let env = TensorEnv::new();
 
-        let a = env.create_scalar(2.0);
-        let b = env.create_scalar(3.0);
-        let c = env.create_scalar(5.0);
+        if x.len() == 1 {
+            let tracker = RegularExecutionTracker::new();
 
-        let f = a._mult_with_scalar(b);
-        let g = f._plus(c);
+            let x = env.scalar(x[0]);
+            let y = x.pow_int(pow, &tracker);
 
-        println!("{:?}", g);
-    }
-
-    #[test]
-    fn test_gradient() {
-        let env = TensorEnv::new();
-
-        let a = env.create_scalar(1.0);
-        let b = env.create_scalar(3.0);
-        let c = env.create_scalar(5.0);
-
-        let x = env.create_scalar(2.0);
+            y.assert_is_pretty_much_equal_to(&env.scalar(y_expected[0]));
+            tracker.grad(y.r(), x.r()).unwrap().assert_is_pretty_much_equal_to(&env.scalar(grad_expected[0]));
+        }
 
         let tracker = RegularExecutionTracker::new();
-        // let y = a.plus(x.r(), &tracker);
-        let y = a.plus(
-            b.mult_element_wise(x.r(), &tracker).plus(
-                c.mult_element_wise(
-                    x.r().pow_int(2, &tracker),
-                    &tracker,
-                ),
-                &tracker
-            ),
-            &tracker
-        );
-        // a + b*x + c*x^2   @ a=1, b=3, c=5, x=2
-        println!("{:?}", y);
-        println!("dy/da: {:?}", tracker.grad(y.r(), a.r()));
-        println!("dy/db: {:?}", tracker.grad(y.r(), b.r()));
-        println!("dy/dc: {:?}", tracker.grad(y.r(), c.r()));
+
+        let x = env.vector(x);
+        let y = x.pow_int(pow, &tracker);
+
+        y.assert_is_pretty_much_equal_to(&env.vector(y_expected));
+        tracker.grad(y.r(), x.r()).unwrap().assert_is_pretty_much_equal_to(&env.vector(grad_expected));
+    }
+
+    #[rstest]
+    #[case(vec![1.0], 2.0, vec![1.0])]
+    #[case(vec![1.0, 2.0, 3.0], 12.0, vec![6.0])]
+    fn test_sum(#[case] x: Vec<f64>, #[case] y_expected: f64, #[case] grad_expected: Vec<f64>) {
+        let env = TensorEnv::new();
+
+        let q = env.scalar(2.0);
+
+        if x.len() == 1 {
+            let tracker = RegularExecutionTracker::new();
+
+            let x = env.scalar(x[0]).mult(q.r(), &tracker);
+            let y = x.sum(&tracker);
+            y.assert_is_pretty_much_equal_to(&env.scalar(y_expected));
+            tracker.grad(y, q.r()).unwrap().assert_is_pretty_much_equal_to(&env.scalar(grad_expected[0]));
+        }
+
+        let tracker = RegularExecutionTracker::new();
+
+        let x = env.vector(x).mult(q.r(), &tracker);
+        let y = x.sum(&tracker);
+        y.assert_is_pretty_much_equal_to(&env.scalar(y_expected));
+        tracker.grad(y, q).unwrap().assert_is_pretty_much_equal_to(&env.vector(grad_expected));
+    }
+
+    // #[test]
+    // fn test_play_around() {
+    //     let env = TensorEnv::new();
+    //
+    //     let a = env.scalar(2.0);
+    //     let b = env.scalar(3.0);
+    //     let c = env.scalar(5.0);
+    //
+    //     let f = a._mult_with_scalar(b);
+    //     let g = f._plus(c);
+    //
+    //     println!("{:?}", g);
+    // }
+    //
+    // #[test]
+    // fn test_gradient() {
+    //     let env = TensorEnv::new();
+    //
+    //     let a = env.scalar(1.0);
+    //     let b = env.scalar(3.0);
+    //     let c = env.scalar(5.0);
+    //
+    //     let x = env.scalar(2.0);
+    //
+    //     let tracker = RegularExecutionTracker::new();
+    //     // let y = a.plus(x.r(), &tracker);
+    //     let y = a.plus(
+    //         b.mult_element_wise(x.r(), &tracker).plus(
+    //             c.mult_element_wise(
+    //                 x.r().pow_int(2, &tracker),
+    //                 &tracker,
+    //             ),
+    //             &tracker
+    //         ),
+    //         &tracker
+    //     );
+    //     // a + b*x + c*x^2   @ a=1, b=3, c=5, x=2
+    //     println!("{:?}", y);
+    //     println!("dy/da: {:?}", tracker.grad(y.r(), a.r()));
+    //     println!("dy/db: {:?}", tracker.grad(y.r(), b.r()));
+    //     println!("dy/dc: {:?}", tracker.grad(y.r(), c.r()));
+    // }
+    //
+    #[test]
+    fn test_gradient_opt() {
+        let env = TensorEnv::new();
+
+        let a = env.scalar(0.1);
+        let b = env.scalar(0.9);
+        let c = env.scalar(0.1);
+        let d = env.scalar(-0.1);
+
+        let x = env.random_lin(-PI, PI, 5_000);
+        let y = x._sin();
+
+        let learning_rate = env.scalar(1e-6);
+
+        for t in 0..2_000 {
+            let tracker = RegularExecutionTracker::new();
+
+            let y3 = x.r()
+                .pow_int(3, &tracker)
+                .mult(d.r(), &tracker);
+            let y2 = x.r()
+                .pow_int(2, &tracker)
+                .mult(c.r(), &tracker);
+            let y1 = x.mult(b.r(), &tracker);
+            let y_pred = y3
+                .plus(y2.r(), &tracker)
+                .plus(y1.r(), &tracker)
+                .plus(a.r(), &tracker);
+
+            let loss = y_pred.minus(y.r(), &tracker).pow_int(2, &tracker).sum(&tracker);
+
+            let grad_a = tracker.grad(loss.r(), a.r()).unwrap();
+            let grad_b = tracker.grad(loss.r(), b.r()).unwrap();
+            let grad_c = tracker.grad(loss.r(), c.r()).unwrap();
+            let grad_d = tracker.grad(loss.r(), d.r()).unwrap();
+
+            a._sub_in_place(grad_a.r()._mult(learning_rate.r()));
+            b._sub_in_place(grad_b.r()._mult(learning_rate.r()));
+            c._sub_in_place(grad_c.r()._mult(learning_rate.r()));
+            d._sub_in_place(grad_d.r()._mult(learning_rate.r()));
+
+            if t%100 == 0 {
+                // println!("loss {:?}: {:?}, {:?}  --  {:?}, {:?}", loss, a.r(), b.r(), grad_a, grad_b);
+                println!("loss {:?}: {:?}, {:?}, {:?}, {:?}  --  {:?}, {:?}, {:?}, {:?}", loss, a.r(), b.r(), c.r(), d.r(), grad_a, grad_b, grad_c, grad_d);
+            }
+        }
     }
 }
 

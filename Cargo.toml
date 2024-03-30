@@ -3,10 +3,14 @@ name = "rust-ml"
 version = "0.1.0"
 edition = "2021"
 
+[dev-dependencies]
+rstest = "0"
+
 [dependencies]
 lazy_static = "1"
 rand = "0"
 triomphe = "0.1"
+log = "0.4.21"
 #mathru = "0"
 ### nalgebra = "0"
 #tract-linalg = "0"
