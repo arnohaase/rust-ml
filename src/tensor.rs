@@ -360,16 +360,16 @@ pub trait ExecutionTracker<'env, F: Float> {
     fn grad(&self, calculated: Tensor<'env, F>, for_ultimate_input: Tensor<'env, F>, depth: usize) -> Option<Tensor<'env, F>>;
 }
 
-// pub struct NoTracker {}
-// impl <'env, F: Float> ExecutionTracker<'env, F> for NoTracker {
-//     fn calc(&self, expr: TrackerExpression<'env, F>) -> Tensor<'env, F> {
-//         expr.calc()
-//     }
-//
-//     fn grad(&self, calculated: Tensor<'env, F>, for_ultimate_input: Tensor<'env, F>) -> Option<Tensor<'env, F>> {
-//         None
-//     }
-// }
+pub struct NoTracker {}
+impl <'env, F: Float> ExecutionTracker<'env, F> for NoTracker {
+    fn calc(&self, expr: TrackerExpression<'env, F>) -> Tensor<'env, F> {
+        expr.calc()
+    }
+
+    fn grad(&self, calculated: Tensor<'env, F>, for_ultimate_input: Tensor<'env, F>, depth: usize) -> Option<Tensor<'env, F>> {
+        None
+    }
+}
 
 pub struct RegularExecutionTracker<'env, F: Float> {
     dependencies: RwLock<HashMap<u32, (u32, TrackerExpression<'env, F>)>>,
@@ -585,6 +585,7 @@ impl <F: Float> SingleTensorOp<F> for SumOp {
 
 #[cfg(test)]
 mod test {
+    use std::env::VarError::NotPresent;
     use std::f64::consts::PI;
     use log::info;
     use log::LevelFilter::{Info, Trace};
