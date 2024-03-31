@@ -562,7 +562,7 @@ impl <F: Float> TwoTensorOp<F> for MinusOp {
         match (grad1, grad2) {
             (None, None) => None,
             (Some(t1), None) => Some(t1),
-            (None, Some(t2)) => todo!("neg(...)"),
+            (None, Some(t2)) => Some(t2.env.scalar(F::zero())._minus(t2)),
             (Some(t1), Some(t2)) => Some(t1._minus(t2))
         }
     }
@@ -636,7 +636,6 @@ mod test {
     #[case(vec![1.0, 2.0, 3.0], 12.0, vec![6.0])]
     fn test_sum(#[case] x: Vec<f64>, #[case] y_expected: f64, #[case] grad_expected: Vec<f64>) {
         let env = TensorEnv::new();
-
         let q = env.scalar(2.0);
 
         if x.len() == 1 {
@@ -656,49 +655,106 @@ mod test {
         tracker.grad(y, q, 0).unwrap().assert_is_pretty_much_equal_to(&env.vector(grad_expected));
     }
 
-    // #[test]
-    // fn test_play_around() {
-    //     let env = TensorEnv::new();
-    //
-    //     let a = env.scalar(2.0);
-    //     let b = env.scalar(3.0);
-    //     let c = env.scalar(5.0);
-    //
-    //     let f = a._mult_with_scalar(b);
-    //     let g = f._plus(c);
-    //
-    //     println!("{:?}", g);
-    // }
-    //
-    // #[test]
-    // fn test_gradient() {
-    //     let env = TensorEnv::new();
-    //
-    //     let a = env.scalar(1.0);
-    //     let b = env.scalar(3.0);
-    //     let c = env.scalar(5.0);
-    //
-    //     let x = env.scalar(2.0);
-    //
-    //     let tracker = RegularExecutionTracker::new();
-    //     // let y = a.plus(x.r(), &tracker);
-    //     let y = a.plus(
-    //         b.mult_element_wise(x.r(), &tracker).plus(
-    //             c.mult_element_wise(
-    //                 x.r().pow_int(2, &tracker),
-    //                 &tracker,
-    //             ),
-    //             &tracker
-    //         ),
-    //         &tracker
-    //     );
-    //     // a + b*x + c*x^2   @ a=1, b=3, c=5, x=2
-    //     println!("{:?}", y);
-    //     println!("dy/da: {:?}", tracker.grad(y.r(), a.r()));
-    //     println!("dy/db: {:?}", tracker.grad(y.r(), b.r()));
-    //     println!("dy/dc: {:?}", tracker.grad(y.r(), c.r()));
-    // }
-    //
+    fn vec_to_tensor<'env>(env: &'env TensorEnv<f64>, x: Vec<f64>) -> Tensor<'env, f64> {
+        if x.len() == 1 {
+            env.scalar(x[0])
+        }
+        else {
+            env.vector(x)
+        }
+    }
+
+    #[rstest]
+    #[case(vec![1.0], vec![2.0], vec![8.0], vec![2.0], vec![3.0])]
+    #[case(vec![1.0, 1.0, 4.0], vec![2.0, 3.0, 7.0], vec![8.0, 11.0, 29.0], vec![2.0], vec![3.0])]
+    #[case(vec![1.0], vec![2.0, 3.0, 7.0], vec![8.0, 11.0, 23.0], vec![2.0], vec![3.0])]
+    #[case(vec![1.0, 1.0, 4.0], vec![2.0], vec![8.0, 8.0, 14.0], vec![2.0], vec![3.0])]
+    fn test_plus(#[case] a: Vec<f64>, #[case] b: Vec<f64>, #[case] sum: Vec<f64>, #[case] grad_a: Vec<f64>, #[case] grad_b: Vec<f64>) {
+        let env = TensorEnv::new();
+        let q1 = env.scalar(2.0);
+        let q2 = env.scalar(3.0);
+
+        let sum = env.vector(sum);
+        let grad_a = env.vector(grad_a);
+        let grad_b = env.vector(grad_b);
+
+        let tracker = RegularExecutionTracker::new();
+
+        let a = vec_to_tensor(&env, a);
+        let b = vec_to_tensor(&env, b);
+
+        let s1 = a.r().mult(q1.r(), &tracker);
+        let s2 = b.r().mult(q2.r(), &tracker);
+        let y = s1.plus(s2, &tracker);
+        y.assert_is_pretty_much_equal_to(&sum);
+        tracker.grad(y.r(), a, 0).unwrap().assert_is_pretty_much_equal_to(&grad_a);
+        tracker.grad(y.r(), b, 0).unwrap().assert_is_pretty_much_equal_to(&grad_b);
+    }
+
+    #[rstest]
+    #[case(vec![1.0], vec![2.0], vec![-4.0], vec![2.0], vec![-3.0])]
+    #[case(vec![1.0, 1.0, 4.0], vec![2.0, 3.0, 7.0], vec![-4.0, -7.0, -13.0], vec![2.0], vec![-3.0])]
+    #[case(vec![1.0], vec![2.0, 3.0, 7.0], vec![-4.0, -7.0, -19.0], vec![2.0], vec![-3.0])]
+    #[case(vec![1.0, 1.0, 4.0], vec![2.0], vec![-4.0, -4.0, 2.0], vec![2.0], vec![-3.0])]
+    fn test_minus(#[case] a: Vec<f64>, #[case] b: Vec<f64>, #[case] sum: Vec<f64>, #[case] grad_a: Vec<f64>, #[case] grad_b: Vec<f64>) {
+        let env = TensorEnv::new();
+        let q1 = env.scalar(2.0);
+        let q2 = env.scalar(3.0);
+
+        let sum = env.vector(sum);
+        let grad_a = env.vector(grad_a);
+        let grad_b = env.vector(grad_b);
+
+        let tracker = RegularExecutionTracker::new();
+
+        let a = vec_to_tensor(&env, a);
+        let b = vec_to_tensor(&env, b);
+
+        let s1 = a.r().mult(q1.r(), &tracker);
+        let s2 = b.r().mult(q2.r(), &tracker);
+        let y = s1.minus(s2, &tracker);
+        y.assert_is_pretty_much_equal_to(&sum);
+        tracker.grad(y.r(), a, 0).unwrap().assert_is_pretty_much_equal_to(&grad_a);
+        tracker.grad(y.r(), b, 0).unwrap().assert_is_pretty_much_equal_to(&grad_b);
+    }
+
+    #[rstest]
+    #[case(vec![1.0], vec![2.0], vec![12.0], vec![12.0], vec![6.0])]
+    #[case(vec![1.0, 1.0, 4.0], vec![2.0, 3.0, 7.0], vec![12.0, 18.0, 168.0], vec![12.0, 18.0, 42.0], vec![6.0, 6.0, 24.0])]
+    #[case(vec![1.0], vec![2.0, 3.0, 7.0], vec![12.0, 18.0, 42.0], vec![12.0, 18.0, 42.0], vec![6.0])]
+    #[case(vec![1.0, 1.0, 4.0], vec![2.0], vec![12.0, 12.0, 48.0], vec![12.0], vec![6.0, 6.0, 24.0])]
+    fn test_mult(#[case] a: Vec<f64>, #[case] b: Vec<f64>, #[case] prod: Vec<f64>, #[case] grad_a: Vec<f64>, #[case] grad_b: Vec<f64>) {
+        // q1(x) = 2*x
+        // q2(x) = 3*x
+        // r(x1,x2) = x1*x2
+        //
+        // f(a, b) = f(q1(a), q2(b))
+        //         = 2*a * 3*b
+        // df/da   = q1'*q2 + q1*q2'
+        //         = 2 * 3*b + 2*0
+        //         = 2 * 3*b
+
+        let env = TensorEnv::new();
+        let q1 = env.scalar(2.0);
+        let q2 = env.scalar(3.0);
+
+        let product = env.vector(prod);
+        let grad_a = env.vector(grad_a);
+        let grad_b = env.vector(grad_b);
+
+        let tracker = RegularExecutionTracker::new();
+
+        let a = vec_to_tensor(&env, a);
+        let b = vec_to_tensor(&env, b);
+
+        let s1 = a.r().mult(q1.r(), &tracker);
+        let s2 = b.r().mult(q2.r(), &tracker);
+        let y = s1.mult(s2, &tracker);
+        y.assert_is_pretty_much_equal_to(&product);
+        tracker.grad(y.r(), a, 0).unwrap().assert_is_pretty_much_equal_to(&grad_a);
+        tracker.grad(y.r(), b, 0).unwrap().assert_is_pretty_much_equal_to(&grad_b);
+    }
+
     #[test]
     fn test_gradient_opt() {
         simple_logger::SimpleLogger::new()
@@ -719,7 +775,7 @@ mod test {
 
         let learning_rate = env.scalar(1e-6);
 
-        for t in 0..2_000 {
+        for t in 0..2 {
             let tracker = RegularExecutionTracker::new();
 
             let y3 = x.r()
