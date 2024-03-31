@@ -9,9 +9,17 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::atomic::Ordering::Acquire;
 
 use lazy_static::lazy_static;
-use log::trace;
 use rand::random;
 use triomphe::Arc;
+
+
+//TODO feature flag
+macro_rules! trace {
+    ($fmt:literal $(, $e:expr)*) => {
+        // log::trace!($fmt $(, $e)*)
+    }
+}
+
 
 pub trait Float:
     Copy + Display + Debug +
@@ -171,6 +179,16 @@ impl<'env, F: Float> Tensor<'env, F> {
         self.clone()
     }
 
+    #[inline]
+    pub fn is_zero(&self) -> bool {
+        self.geometry == Geometry::scalar() && self.read()[0] == F::zero()
+    }
+
+    #[inline]
+    pub fn is_one(&self) -> bool {
+        self.geometry == Geometry::scalar() && self.read()[0] == F::one()
+    }
+
     /// Comparing floating point numbers for exact equality does not work much of the time due to
     ///  rounding errors. This is a convenience function that compares two tensors element by
     ///  element, returning true if each of the elements are equal within a heuristically chosen
@@ -256,8 +274,16 @@ impl<'env, F: Float> Tensor<'env, F> {
     pub fn plus(&self, other: Tensor<'env, F>, tracker: &dyn ExecutionTracker<'env, F>) -> Tensor<'env, F> {
         tracker.calc(TrackerExpression::Two(self.r(), other, Box::new(PlusOp{})))
     }
-    fn _plus(&self, rhs: Tensor<'_, F>) -> Tensor<'env, F> {
+    fn _plus(&self, rhs: Tensor<'env, F>) -> Tensor<'env, F> {
         trace!("_plus ({:?}+{:?})", self.geometry, rhs.geometry);
+
+        if self.is_zero() {
+            return rhs; //TODO unit test
+        }
+        if rhs.is_zero() {
+            return self.r();
+        }
+
         self.binary_operation(&rhs, |a, b, result| {
             for i in 0..a.len() {
                 result.push(a[i] + b[i]);
@@ -270,6 +296,11 @@ impl<'env, F: Float> Tensor<'env, F> {
     }
     fn _minus(&self, rhs: Tensor<'_, F>) -> Tensor<'env, F> {
         trace!("_minus ({:?}-{:?})", self.geometry, rhs.geometry);
+
+        if rhs.is_zero() {
+            return self.r();
+        }
+
         self.binary_operation(&rhs, |a, b, result| {
             for i in 0..a.len() {
                 result.push(a[i] - b[i]);
@@ -294,8 +325,19 @@ impl<'env, F: Float> Tensor<'env, F> {
         tracker.calc(TrackerExpression::Two(self.r(), rhs, Box::new(MultOp{})))
     }
 
-    fn _mult(&self, rhs: Tensor<'_, F>) -> Tensor<'env, F> {
+    fn _mult(&self, rhs: Tensor<'env, F>) -> Tensor<'env, F> {
         trace!("_mult ({:?}*{:?})", self.geometry, rhs.geometry);
+
+        if self.is_one() {
+            return rhs;
+        }
+        if rhs.is_one() {
+            return self.r();
+        }
+        if self.is_zero() || rhs.is_zero() {
+            return self.env.scalar(F::zero());
+        }
+
         self.binary_operation(&rhs, |a, b, result| {
             for i in 0..a.len() {
                 result.push(a[i] * b[i]);
@@ -324,6 +366,7 @@ impl<'env, F: Float> Tensor<'env, F> {
                 1 => panic!("should have been handled by short-circuit logic"),
                 2 => data.push(x*x),
                 3 => data.push(x*x*x),
+                4 => data.push(x*x*x*x), //TODO unit test
                 _ => data.push(x.pow_i(exp)), //TODO up to what exponent is multiplying more efficient?
             }
         }
@@ -587,8 +630,7 @@ impl <F: Float> SingleTensorOp<F> for SumOp {
 mod test {
     use std::env::VarError::NotPresent;
     use std::f64::consts::PI;
-    use log::info;
-    use log::LevelFilter::{Info, Trace};
+    use log::LevelFilter::Info;
 
     use rstest::*;
 
@@ -757,13 +799,7 @@ mod test {
     }
 
     #[test]
-    fn test_gradient_opt() {
-        simple_logger::SimpleLogger::new()
-            .with_colors(true)
-            .with_level(Info)
-            .init()
-            .unwrap();
-
+    fn test_gradient_explicit() {
         let env = TensorEnv::new();
 
         let a = env.scalar(0.1);
@@ -776,7 +812,7 @@ mod test {
 
         let learning_rate = env.scalar(1e-6);
 
-        for t in 0..2 {
+        for t in 0..2_000 {
             let tracker = RegularExecutionTracker::new();
 
             let y3 = x.r()
@@ -805,17 +841,10 @@ mod test {
             d._sub_in_place(grad_d.r()._mult(learning_rate.r()));
             trace!("-------- after");
 
-            // println!("{:?}", loss);
-            // return;
-
             if t%100 == 0 {
                 println!("loss {:?}: {:?}, {:?}, {:?}, {:?}  --  {:?}, {:?}, {:?}, {:?}", loss, a.r(), b.r(), c.r(), d.r(), grad_a, grad_b, grad_c, grad_d);
             }
         }
     }
 }
-
-
-
-
 

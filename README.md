@@ -50,6 +50,10 @@ can be potentially lifted to match the other tensor's geometry.
 * cyclic, version
 * reshaping
 
+### optimization
+* `profile.release` -> 5-10% speedup (for pytorch initial example)
+* `RUSTFLAGS="-C target-cpu=native" cargo ...` -> another 15-20% speedup (for pytorch initial example) 
+
 ## Links
 * Gradient Descent: https://www.youtube.com/watch?v=tIeHLnjs5U8&t=13s
 * GPUs vs CPUs for training: https://gcore.com/blog/deep-learning-gpu/

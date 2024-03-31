@@ -12,9 +12,14 @@ lazy_static = "1"
 rand = "0"
 triomphe = "0.1"
 log = "0.4.21"
+#tracing = "0"
 #mathru = "0"
 ### nalgebra = "0"
 #tract-linalg = "0"
 
 #autograd = "2.0.0-rc3"
+
+[profile.release]
+codegen-units = 1
+lto = "fat"
 
