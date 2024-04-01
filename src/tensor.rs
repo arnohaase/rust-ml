@@ -12,7 +12,6 @@ use lazy_static::lazy_static;
 use rand::random;
 use triomphe::Arc;
 
-
 //TODO feature flag
 macro_rules! trace {
     ($fmt:literal $(, $e:expr)*) => {
@@ -63,6 +62,7 @@ lazy_static! {
     static ref TENSOR_ID_COUNTER: AtomicU32 = AtomicU32::new(0);
 }
 
+#[derive(Clone)]
 pub struct TensorEnv<F: Float> {
     pd: PhantomData<F>,
 }
@@ -76,7 +76,7 @@ impl <F: Float> TensorEnv<F> {
     fn assemble(&self, geometry: Geometry, data: Vec<F>) -> Tensor<F> {
         let id = TENSOR_ID_COUNTER.fetch_add(1, Ordering::SeqCst);
         Tensor {
-            env: self,
+            env: self.clone(),
             id,
             version: Default::default(),
             geometry,
@@ -158,24 +158,24 @@ pub enum GeometryComparisonResult {
 
 
 #[derive(Clone)]
-pub struct Tensor<'env, F: Float> {
+pub struct Tensor<F: Float> {
     //TODO optional name (for debugging)
-    env: &'env TensorEnv<F>,
+    env: TensorEnv<F>,
     id: u32,
     /// incremented on each change
     version: Arc<AtomicU32>,
     geometry: Geometry,
     data: Arc<RwLock<Vec<F>>>,
 }
-impl<'env, F: Float> Debug for Tensor<'env, F> {
+impl<F: Float> Debug for Tensor<F> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{:?}: {:?}", self.geometry, self.read())
     }
 }
 
 
-impl<'env, F: Float> Tensor<'env, F> {
-    pub fn r(&self) -> Tensor<'env, F> {
+impl<F: Float> Tensor<F> {
+    pub fn r(&self) -> Tensor<F> {
         self.clone()
     }
 
@@ -195,7 +195,7 @@ impl<'env, F: Float> Tensor<'env, F> {
     ///  EPSILON.
     ///
     /// This method is intended as convenience functionality for unit tests.
-    pub fn is_pretty_much_equal_to(&self, other: &Tensor<'env, F>) -> bool {
+    pub fn is_pretty_much_equal_to(&self, other: &Tensor<F>) -> bool {
         let eps:F = 1e-8.into();
 
         let equivalent_geometry =
@@ -220,7 +220,7 @@ impl<'env, F: Float> Tensor<'env, F> {
         true
     }
 
-    pub fn assert_is_pretty_much_equal_to(&self, other: &Tensor<'env, F>) {
+    pub fn assert_is_pretty_much_equal_to(&self, other: &Tensor<F>) {
         assert!(self.is_pretty_much_equal_to(other), "not equal: {:?} != {:?}", self, &other);
     }
 
@@ -237,7 +237,7 @@ impl<'env, F: Float> Tensor<'env, F> {
 
 
     /// This handles mismatching geometries by lifting / iterating over outer dimensions
-    fn binary_operation(&self, other: &Tensor<'_, F>, f: impl Fn(&[F], &[F], &mut Vec<F>)) -> Tensor<'env, F> {
+    fn binary_operation(&self, other: &Tensor<F>, f: impl Fn(&[F], &[F], &mut Vec<F>)) -> Tensor<F> {
         let t1 = self.read();
         let t2 = other.read();
 
@@ -271,10 +271,10 @@ impl<'env, F: Float> Tensor<'env, F> {
     }
 
 
-    pub fn plus(&self, other: Tensor<'env, F>, tracker: &dyn ExecutionTracker<'env, F>) -> Tensor<'env, F> {
+    pub fn plus(&self, other: Tensor<F>, tracker: &dyn ExecutionTracker<F>) -> Tensor<F> {
         tracker.calc(TrackerExpression::Two(self.r(), other, Box::new(PlusOp{})))
     }
-    fn _plus(&self, rhs: Tensor<'env, F>) -> Tensor<'env, F> {
+    fn _plus(&self, rhs: Tensor<F>) -> Tensor<F> {
         trace!("_plus ({:?}+{:?})", self.geometry, rhs.geometry);
 
         if self.is_zero() {
@@ -291,10 +291,10 @@ impl<'env, F: Float> Tensor<'env, F> {
         })
     }
 
-    pub fn minus(&self, other: Tensor<'env, F>, tracker: &dyn ExecutionTracker<'env, F>) -> Tensor<'env, F> {
+    pub fn minus(&self, other: Tensor<F>, tracker: &dyn ExecutionTracker<F>) -> Tensor<F> {
         tracker.calc(TrackerExpression::Two(self.r(), other, Box::new(MinusOp{})))
     }
-    fn _minus(&self, rhs: Tensor<'_, F>) -> Tensor<'env, F> {
+    fn _minus(&self, rhs: Tensor<F>) -> Tensor<F> {
         trace!("_minus ({:?}-{:?})", self.geometry, rhs.geometry);
 
         if rhs.is_zero() {
@@ -308,10 +308,10 @@ impl<'env, F: Float> Tensor<'env, F> {
         })
     }
 
-    fn sum(&self, tracker: &dyn ExecutionTracker<'env, F>) -> Tensor<'env, F> {
+    fn sum(&self, tracker: &dyn ExecutionTracker<F>) -> Tensor<F> {
         tracker.calc(TrackerExpression::Single(self.r(), Box::new(SumOp{}))) //TODO convenience API
     }
-    fn _sum(&self) -> Tensor<'env, F> {
+    fn _sum(&self) -> Tensor<F> {
         trace!("_sum ({:?})", self.geometry);
         let mut result = F::zero();
 
@@ -321,11 +321,11 @@ impl<'env, F: Float> Tensor<'env, F> {
         self.env.scalar(result)
     }
 
-    pub fn mult(&self, rhs: Tensor<'env, F>, tracker: &dyn ExecutionTracker<'env, F>) -> Tensor<'env, F> {
+    pub fn mult(&self, rhs: Tensor<F>, tracker: &dyn ExecutionTracker<F>) -> Tensor<F> {
         tracker.calc(TrackerExpression::Two(self.r(), rhs, Box::new(MultOp{})))
     }
 
-    fn _mult(&self, rhs: Tensor<'env, F>) -> Tensor<'env, F> {
+    fn _mult(&self, rhs: Tensor<F>) -> Tensor<F> {
         trace!("_mult ({:?}*{:?})", self.geometry, rhs.geometry);
 
         if self.is_one() {
@@ -345,10 +345,10 @@ impl<'env, F: Float> Tensor<'env, F> {
         })
     }
 
-    pub fn pow_int(&self, exp: u16, tracker: &dyn ExecutionTracker<'env, F>) -> Tensor<'env, F> {
+    pub fn pow_int(&self, exp: u16, tracker: &dyn ExecutionTracker<F>) -> Tensor<F> {
         tracker.calc(TrackerExpression::Single(self.r(), Box::new(PowInt { exp })))
     }
-    pub fn _pow_int(&self, exp: u16) -> Tensor<'env, F> {
+    pub fn _pow_int(&self, exp: u16) -> Tensor<F> {
         trace!("_pow_int ({:?}^{})", self.geometry, exp);
 
         if exp == 0 {
@@ -374,7 +374,7 @@ impl<'env, F: Float> Tensor<'env, F> {
     }
 
     //TODO sin()
-    pub fn _sin(&self) -> Tensor<'env, F> {
+    pub fn _sin(&self) -> Tensor<F> {
         let v1 = self.read();
         let mut data = Vec::with_capacity(v1.len());
         for &x in v1.iter() {
@@ -383,10 +383,10 @@ impl<'env, F: Float> Tensor<'env, F> {
         self.env.assemble(self.geometry.clone(), data)
     }
 
-    pub fn _sub_in_place(&self, other: Tensor<'env, F>) {
+    pub fn _sub_in_place(&self, other: Tensor<F>) {
         //TODO assert / lift geometry
         let mut data = self.write();
-        let mut other = other.read();
+        let other = other.read();
 
         for i in 0..data.len() {
             data[i] = data[i] - other[i];
@@ -397,35 +397,35 @@ impl<'env, F: Float> Tensor<'env, F> {
 
 //TODO 'requires_grad' with possible 'ultimate input' variables on construction as an optimization?
 
-pub trait ExecutionTracker<'env, F: Float> {
-    fn calc(&self, expr: TrackerExpression<'env, F>) -> Tensor<'env, F>;
+pub trait ExecutionTracker<F: Float> {
+    fn calc(&self, expr: TrackerExpression<F>) -> Tensor<F>;
 
-    fn grad(&self, calculated: Tensor<'env, F>, for_ultimate_input: Tensor<'env, F>) -> Option<Tensor<'env, F>>;
+    fn grad(&self, calculated: Tensor<F>, for_ultimate_input: Tensor<F>) -> Option<Tensor<F>>;
 }
 
 pub struct NoTracker {}
-impl <'env, F: Float> ExecutionTracker<'env, F> for NoTracker {
-    fn calc(&self, expr: TrackerExpression<'env, F>) -> Tensor<'env, F> {
+impl <F: Float> ExecutionTracker<F> for NoTracker {
+    fn calc(&self, expr: TrackerExpression<F>) -> Tensor<F> {
         expr.calc()
     }
 
-    fn grad(&self, _calculated: Tensor<'env, F>, _for_ultimate_input: Tensor<'env, F>) -> Option<Tensor<'env, F>> {
+    fn grad(&self, _calculated: Tensor<F>, _for_ultimate_input: Tensor<F>) -> Option<Tensor<F>> {
         None
     }
 }
 
-pub struct RegularExecutionTracker<'env, F: Float> {
-    dependencies: RwLock<HashMap<u32, (u32, TrackerExpression<'env, F>)>>,
+pub struct RegularExecutionTracker<F: Float> {
+    dependencies: RwLock<HashMap<u32, (u32, TrackerExpression<F>)>>,
 }
-impl <'env, F: Float> RegularExecutionTracker<'env, F> {
-    pub fn new() -> RegularExecutionTracker<'env, F> {
+impl <F: Float> RegularExecutionTracker<F> {
+    pub fn new() -> RegularExecutionTracker<F> {
         RegularExecutionTracker {
             dependencies: Default::default()
         }
     }
 }
-impl <'env, F: Float> ExecutionTracker<'env, F> for RegularExecutionTracker<'env, F> {
-    fn calc(&self, expr: TrackerExpression<'env, F>) -> Tensor<'env, F> {
+impl <F: Float> ExecutionTracker<F> for RegularExecutionTracker<F> {
+    fn calc(&self, expr: TrackerExpression<F>) -> Tensor<F> {
         let calculated = expr.calc();
         let version = calculated.version.fetch_add(0, Ordering::Acquire);
         let mut write = self.dependencies.write().unwrap();
@@ -441,7 +441,7 @@ impl <'env, F: Float> ExecutionTracker<'env, F> for RegularExecutionTracker<'env
     }
 
     /// NB: gradient calculation is outside of execution tracking
-    fn grad(&self, calculated: Tensor<'env, F>, for_ultimate_input: Tensor<'env, F>) -> Option<Tensor<'env, F>> {
+    fn grad(&self, calculated: Tensor<F>, for_ultimate_input: Tensor<F>) -> Option<Tensor<F>> {
         trace!("{}grad [{:?}]", indent, calculated.id);
 
         if calculated.id == for_ultimate_input.id {
@@ -517,12 +517,12 @@ impl <'env, F: Float> ExecutionTracker<'env, F> for RegularExecutionTracker<'env
     }
 }
 
-pub enum TrackerExpression<'env, F: Float> {
-    Single(Tensor<'env, F>, Box<dyn SingleTensorOp<F>>),
-    Two(Tensor<'env, F>, Tensor<'env, F>, Box<dyn TwoTensorOp<F>>),
+pub enum TrackerExpression<F: Float> {
+    Single(Tensor<F>, Box<dyn SingleTensorOp<F>>),
+    Two(Tensor<F>, Tensor<F>, Box<dyn TwoTensorOp<F>>),
 }
-impl <'env, F: Float> TrackerExpression<'env, F> {
-    fn calc(&self) -> Tensor<'env, F> {
+impl <F: Float> TrackerExpression<F> {
+    fn calc(&self) -> Tensor<F> {
         match self {
             TrackerExpression::Single(t, op) => op.apply(t.r()),
             TrackerExpression::Two(t1, t2, op) => op.apply(t1.r(), t2.r())
@@ -531,12 +531,12 @@ impl <'env, F: Float> TrackerExpression<'env, F> {
 }
 
 pub trait SingleTensorOp<F: Float>: Debug {
-    fn apply<'env>(&self, t: Tensor<'env, F>) -> Tensor<'env, F>;
-    fn grad<'env>(&self, t: Tensor<'env, F>, t_grad: Tensor<'env, F>) -> Tensor<'env, F>;
+    fn apply<'env>(&self, t: Tensor<F>) -> Tensor<F>;
+    fn grad<'env>(&self, t: Tensor<F>, t_grad: Tensor<F>) -> Tensor<F>;
 }
 pub trait TwoTensorOp<F: Float>: Debug {
-    fn apply<'env>(&self, t1: Tensor<'env, F>, t2: Tensor<'env, F>) -> Tensor<'env, F>;
-    fn grad<'env>(&self, t1: Tensor<'env, F>, grad1: Option<Tensor<'env, F>>, t2: Tensor<'env, F>, grad2: Option<Tensor<'env, F>>) -> Option<Tensor<'env, F>>;
+    fn apply<'env>(&self, t1: Tensor<F>, t2: Tensor<F>) -> Tensor<F>;
+    fn grad<'env>(&self, t1: Tensor<F>, grad1: Option<Tensor<F>>, t2: Tensor<F>, grad2: Option<Tensor<F>>) -> Option<Tensor<F>>;
 }
 
 #[derive(Debug)]
@@ -546,10 +546,10 @@ pub struct PowInt {
 impl <F: Float> SingleTensorOp<F> for PowInt {
     //TODO limit to exp > 1 - create to other 'single' ops instead
 
-    fn apply<'env>(&self, t: Tensor<'env, F>) -> Tensor<'env, F> {
+    fn apply<'env>(&self, t: Tensor<F>) -> Tensor<F> {
         t._pow_int(self.exp)
     }
-    fn grad<'env>(&self, t: Tensor<'env, F>, t_grad: Tensor<'env, F>) -> Tensor<'env, F> {
+    fn grad<'env>(&self, t: Tensor<F>, t_grad: Tensor<F>) -> Tensor<F> {
         let pow_grad = t._pow_int(self.exp - 1)._mult(t.env.scalar(self.exp.into()));
         pow_grad._mult(t_grad)
     }
@@ -558,11 +558,11 @@ impl <F: Float> SingleTensorOp<F> for PowInt {
 #[derive(Debug)]
 pub struct MultOp{}
 impl <F: Float> TwoTensorOp<F> for MultOp {
-    fn apply<'env>(&self, t1: Tensor<'env, F>, t2: Tensor<'env, F>) -> Tensor<'env, F> {
+    fn apply<'env>(&self, t1: Tensor<F>, t2: Tensor<F>) -> Tensor<F> {
         t1._mult(t2)
     }
 
-    fn grad<'env>(&self, t1: Tensor<'env, F>, grad1: Option<Tensor<'env, F>>, t2: Tensor<'env, F>, grad2: Option<Tensor<'env, F>>) -> Option<Tensor<'env, F>> {
+    fn grad<'env>(&self, t1: Tensor<F>, grad1: Option<Tensor<F>>, t2: Tensor<F>, grad2: Option<Tensor<F>>) -> Option<Tensor<F>> {
         let term1 = grad1.map(|grad1| grad1._mult(t2.r()));
         let term2 = grad2.map(|grad2| t1._mult(grad2));
 
@@ -578,11 +578,11 @@ impl <F: Float> TwoTensorOp<F> for MultOp {
 #[derive(Debug)]
 pub struct PlusOp{}
 impl <F: Float> TwoTensorOp<F> for PlusOp {
-    fn apply<'env>(&self, t1: Tensor<'env, F>, t2: Tensor<'env, F>) -> Tensor<'env, F> {
+    fn apply<'env>(&self, t1: Tensor<F>, t2: Tensor<F>) -> Tensor<F> {
         t1._plus(t2)
     }
 
-    fn grad<'env>(&self, _t1: Tensor<'env, F>, grad1: Option<Tensor<'env, F>>, _t2: Tensor<'env, F>, grad2: Option<Tensor<'env, F>>) -> Option<Tensor<'env, F>> {
+    fn grad<'env>(&self, _t1: Tensor<F>, grad1: Option<Tensor<F>>, _t2: Tensor<F>, grad2: Option<Tensor<F>>) -> Option<Tensor<F>> {
         match (grad1, grad2) {
             (None, None) => None,
             (Some(t1), None) => Some(t1),
@@ -595,11 +595,11 @@ impl <F: Float> TwoTensorOp<F> for PlusOp {
 #[derive(Debug)]
 pub struct MinusOp{}
 impl <F: Float> TwoTensorOp<F> for MinusOp {
-    fn apply<'env>(&self, t1: Tensor<'env, F>, t2: Tensor<'env, F>) -> Tensor<'env, F> {
+    fn apply<'env>(&self, t1: Tensor<F>, t2: Tensor<F>) -> Tensor<F> {
         t1._minus(t2)
     }
 
-    fn grad<'env>(&self, _t1: Tensor<'env, F>, grad1: Option<Tensor<'env, F>>, _t2: Tensor<'env, F>, grad2: Option<Tensor<'env, F>>) -> Option<Tensor<'env, F>> {
+    fn grad<'env>(&self, _t1: Tensor<F>, grad1: Option<Tensor<F>>, _t2: Tensor<F>, grad2: Option<Tensor<F>>) -> Option<Tensor<F>> {
         match (grad1, grad2) {
             (None, None) => None,
             (Some(t1), None) => Some(t1),
@@ -613,12 +613,12 @@ impl <F: Float> TwoTensorOp<F> for MinusOp {
 pub struct SumOp{}
 impl <F: Float> SingleTensorOp<F> for SumOp {
 
-    fn apply<'env>(&self, t: Tensor<'env, F>) -> Tensor<'env, F> {
+    fn apply<'env>(&self, t: Tensor<F>) -> Tensor<F> {
         //TODO generalize to n-dim -> (n-1)-dim?
         t._sum()
     }
 
-    fn grad<'env>(&self, _t: Tensor<'env, F>, t_grad: Tensor<'env, F>) -> Tensor<'env, F> {
+    fn grad<'env>(&self, _t: Tensor<F>, t_grad: Tensor<F>) -> Tensor<F> {
         t_grad._sum()
     }
 }
@@ -626,9 +626,7 @@ impl <F: Float> SingleTensorOp<F> for SumOp {
 
 #[cfg(test)]
 mod test {
-    use std::env::VarError::NotPresent;
     use std::f64::consts::PI;
-    use log::LevelFilter::Info;
 
     use rstest::*;
 
@@ -696,7 +694,7 @@ mod test {
         tracker.grad(y, q).unwrap().assert_is_pretty_much_equal_to(&env.vector(grad_expected));
     }
 
-    fn vec_to_tensor<'env>(env: &'env TensorEnv<f64>, x: Vec<f64>) -> Tensor<'env, f64> {
+    fn vec_to_tensor<'env>(env: &'env TensorEnv<f64>, x: Vec<f64>) -> Tensor<f64> {
         if x.len() == 1 {
             env.scalar(x[0])
         }
