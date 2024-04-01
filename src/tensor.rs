@@ -2,7 +2,6 @@ use std::cmp::max;
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::fmt::{Debug, Display, Formatter};
-use std::marker::PhantomData;
 use std::ops::{Add, Div, Mul, Neg, Sub};
 use std::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -20,7 +19,7 @@ macro_rules! trace {
 }
 
 
-pub trait Float:
+pub trait Float: 'static +
     Copy + Display + Debug +
     PartialOrd +
     Add<Output=Self> + Sub<Output=Self> + Mul<Output=Self> + Div<Output=Self> +
@@ -64,12 +63,13 @@ lazy_static! {
 
 #[derive(Clone)]
 pub struct TensorEnv<F: Float> {
-    pd: PhantomData<F>,
+    //TODO why doesn't this work with triomphe?
+    implicit_tracker: Arc<RwLock<std::sync::Arc<dyn ExecutionTracker<F>>>>,
 }
 impl <F: Float> TensorEnv<F> {
     pub fn new() -> TensorEnv<F> {
         TensorEnv {
-            pd: Default::default(),
+            implicit_tracker: Arc::new(RwLock::new(std::sync::Arc::new(NoTracker{}))),
         }
     }
 
@@ -99,6 +99,22 @@ impl <F: Float> TensorEnv<F> {
             data.push(F::random_0_1() * (max-min) + min);
         }
         self.assemble(Geometry::vector(dim), data)
+    }
+
+    pub fn with_tracker(&self, code: impl FnOnce(&dyn ExecutionTracker<F>)) {
+        let prev = self.implicit_tracker.read().unwrap().clone();
+
+        let tracker = std::sync::Arc::new(RegularExecutionTracker::new());
+        *self.implicit_tracker.write().unwrap() = tracker.clone();
+
+        code(tracker.as_ref());
+
+        *self.implicit_tracker.write().unwrap() = prev;
+        //TODO return tracker? return some data from 'code'?
+    }
+
+    pub fn current_tracker(&self) -> std::sync::Arc<dyn ExecutionTracker<F>> {
+        self.implicit_tracker.read().unwrap().clone()
     }
 }
 
@@ -170,6 +186,28 @@ pub struct Tensor<F: Float> {
 impl<F: Float> Debug for Tensor<F> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{:?}: {:?}", self.geometry, self.read())
+    }
+}
+
+impl <F: Float> Add for Tensor<F> {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        self.plus_full(rhs, self.env.current_tracker().as_ref())
+    }
+}
+impl <F: Float> Sub for Tensor<F> {
+    type Output = Self;
+
+    fn sub(self, rhs: Self) -> Self::Output {
+        self.minus_full(rhs, self.env.current_tracker().as_ref())
+    }
+}
+impl <F: Float> Mul for Tensor<F> {
+    type Output = Self;
+
+    fn mul(self, rhs: Self) -> Self::Output {
+        self.mult_full(rhs, self.env.current_tracker().as_ref())
     }
 }
 
@@ -271,8 +309,8 @@ impl<F: Float> Tensor<F> {
     }
 
 
-    pub fn plus(&self, other: Tensor<F>, tracker: &dyn ExecutionTracker<F>) -> Tensor<F> {
-        tracker.calc(TrackerExpression::Two(self.r(), other, Box::new(PlusOp{})))
+    pub fn plus_full(&self, other: Tensor<F>, tracker: &dyn ExecutionTracker<F>) -> Tensor<F> {
+        tracker.calc(TrackerExpression::Two(self.r(), other.r(), Box::new(PlusOp{})))
     }
     fn _plus(&self, rhs: Tensor<F>) -> Tensor<F> {
         trace!("_plus ({:?}+{:?})", self.geometry, rhs.geometry);
@@ -291,7 +329,7 @@ impl<F: Float> Tensor<F> {
         })
     }
 
-    pub fn minus(&self, other: Tensor<F>, tracker: &dyn ExecutionTracker<F>) -> Tensor<F> {
+    pub fn minus_full(&self, other: Tensor<F>, tracker: &dyn ExecutionTracker<F>) -> Tensor<F> {
         tracker.calc(TrackerExpression::Two(self.r(), other, Box::new(MinusOp{})))
     }
     fn _minus(&self, rhs: Tensor<F>) -> Tensor<F> {
@@ -308,7 +346,10 @@ impl<F: Float> Tensor<F> {
         })
     }
 
-    fn sum(&self, tracker: &dyn ExecutionTracker<F>) -> Tensor<F> {
+    fn sum(&self) -> Tensor<F> {
+        self.sum_full(self.env.current_tracker().as_ref())
+    }
+    fn sum_full(&self, tracker: &dyn ExecutionTracker<F>) -> Tensor<F> {
         tracker.calc(TrackerExpression::Single(self.r(), Box::new(SumOp{}))) //TODO convenience API
     }
     fn _sum(&self) -> Tensor<F> {
@@ -321,10 +362,9 @@ impl<F: Float> Tensor<F> {
         self.env.scalar(result)
     }
 
-    pub fn mult(&self, rhs: Tensor<F>, tracker: &dyn ExecutionTracker<F>) -> Tensor<F> {
+    pub fn mult_full(&self, rhs: Tensor<F>, tracker: &dyn ExecutionTracker<F>) -> Tensor<F> {
         tracker.calc(TrackerExpression::Two(self.r(), rhs, Box::new(MultOp{})))
     }
-
     fn _mult(&self, rhs: Tensor<F>) -> Tensor<F> {
         trace!("_mult ({:?}*{:?})", self.geometry, rhs.geometry);
 
@@ -345,7 +385,10 @@ impl<F: Float> Tensor<F> {
         })
     }
 
-    pub fn pow_int(&self, exp: u16, tracker: &dyn ExecutionTracker<F>) -> Tensor<F> {
+    pub fn pow(&self, exp: u16) -> Tensor<F> {
+        self.pow_int_full(exp, self.env.current_tracker().as_ref())
+    }
+    pub fn pow_int_full(&self, exp: u16, tracker: &dyn ExecutionTracker<F>) -> Tensor<F> {
         tracker.calc(TrackerExpression::Single(self.r(), Box::new(PowInt { exp })))
     }
     pub fn _pow_int(&self, exp: u16) -> Tensor<F> {
@@ -655,7 +698,7 @@ mod test {
             let tracker = RegularExecutionTracker::new();
 
             let x = env.scalar(x[0]);
-            let y = x.pow_int(pow, &tracker);
+            let y = x.pow_int_full(pow, &tracker);
 
             y.assert_is_pretty_much_equal_to(&env.scalar(y_expected[0]));
             tracker.grad(y.r(), x.r()).unwrap().assert_is_pretty_much_equal_to(&env.scalar(grad_expected[0]));
@@ -664,7 +707,7 @@ mod test {
         let tracker = RegularExecutionTracker::new();
 
         let x = env.vector(x);
-        let y = x.pow_int(pow, &tracker);
+        let y = x.pow_int_full(pow, &tracker);
 
         y.assert_is_pretty_much_equal_to(&env.vector(y_expected));
         tracker.grad(y.r(), x.r()).unwrap().assert_is_pretty_much_equal_to(&env.vector(grad_expected));
@@ -680,16 +723,16 @@ mod test {
         if x.len() == 1 {
             let tracker = RegularExecutionTracker::new();
 
-            let x = env.scalar(x[0]).mult(q.r(), &tracker);
-            let y = x.sum(&tracker);
+            let x = env.scalar(x[0]).mult_full(q.r(), &tracker);
+            let y = x.sum_full(&tracker);
             y.assert_is_pretty_much_equal_to(&env.scalar(y_expected));
             tracker.grad(y, q.r()).unwrap().assert_is_pretty_much_equal_to(&env.scalar(grad_expected[0]));
         }
 
         let tracker = RegularExecutionTracker::new();
 
-        let x = env.vector(x).mult(q.r(), &tracker);
-        let y = x.sum(&tracker);
+        let x = env.vector(x).mult_full(q.r(), &tracker);
+        let y = x.sum_full(&tracker);
         y.assert_is_pretty_much_equal_to(&env.scalar(y_expected));
         tracker.grad(y, q).unwrap().assert_is_pretty_much_equal_to(&env.vector(grad_expected));
     }
@@ -722,9 +765,9 @@ mod test {
         let a = vec_to_tensor(&env, a);
         let b = vec_to_tensor(&env, b);
 
-        let s1 = a.r().mult(q1.r(), &tracker);
-        let s2 = b.r().mult(q2.r(), &tracker);
-        let y = s1.plus(s2, &tracker);
+        let s1 = a.r().mult_full(q1.r(), &tracker);
+        let s2 = b.r().mult_full(q2.r(), &tracker);
+        let y = s1.plus_full(s2, &tracker);
         y.assert_is_pretty_much_equal_to(&sum);
         tracker.grad(y.r(), a).unwrap().assert_is_pretty_much_equal_to(&grad_a);
         tracker.grad(y.r(), b).unwrap().assert_is_pretty_much_equal_to(&grad_b);
@@ -749,9 +792,9 @@ mod test {
         let a = vec_to_tensor(&env, a);
         let b = vec_to_tensor(&env, b);
 
-        let s1 = a.r().mult(q1.r(), &tracker);
-        let s2 = b.r().mult(q2.r(), &tracker);
-        let y = s1.minus(s2, &tracker);
+        let s1 = a.r().mult_full(q1.r(), &tracker);
+        let s2 = b.r().mult_full(q2.r(), &tracker);
+        let y = s1.minus_full(s2, &tracker);
         y.assert_is_pretty_much_equal_to(&sum);
         tracker.grad(y.r(), a).unwrap().assert_is_pretty_much_equal_to(&grad_a);
         tracker.grad(y.r(), b).unwrap().assert_is_pretty_much_equal_to(&grad_b);
@@ -786,9 +829,9 @@ mod test {
         let a = vec_to_tensor(&env, a);
         let b = vec_to_tensor(&env, b);
 
-        let s1 = a.r().mult(q1.r(), &tracker);
-        let s2 = b.r().mult(q2.r(), &tracker);
-        let y = s1.mult(s2, &tracker);
+        let s1 = a.r().mult_full(q1.r(), &tracker);
+        let s2 = b.r().mult_full(q2.r(), &tracker);
+        let y = s1.mult_full(s2, &tracker);
         y.assert_is_pretty_much_equal_to(&product);
         tracker.grad(y.r(), a).unwrap().assert_is_pretty_much_equal_to(&grad_a);
         tracker.grad(y.r(), b).unwrap().assert_is_pretty_much_equal_to(&grad_b);
@@ -812,18 +855,18 @@ mod test {
             let tracker = RegularExecutionTracker::new();
 
             let y3 = x.r()
-                .pow_int(3, &tracker)
-                .mult(d.r(), &tracker);
+                .pow_int_full(3, &tracker)
+                .mult_full(d.r(), &tracker);
             let y2 = x.r()
-                .pow_int(2, &tracker)
-                .mult(c.r(), &tracker);
-            let y1 = x.mult(b.r(), &tracker);
+                .pow_int_full(2, &tracker)
+                .mult_full(c.r(), &tracker);
+            let y1 = x.mult_full(b.r(), &tracker);
             let y_pred = y3
-                .plus(y2.r(), &tracker)
-                .plus(y1.r(), &tracker)
-                .plus(a.r(), &tracker);
+                .plus_full(y2, &tracker)
+                .plus_full(y1, &tracker)
+                .plus_full(a.r(), &tracker);
 
-            let loss = y_pred.minus(y.r(), &tracker).pow_int(2, &tracker).sum(&tracker);
+            let loss = y_pred.minus_full(y.r(), &tracker).pow_int_full(2, &tracker).sum_full(&tracker);
 
             trace!("-------- before");
             let grad_a = tracker.grad(loss.r(), a.r()).unwrap();
@@ -840,6 +883,47 @@ mod test {
             if t%100 == 0 {
                 println!("loss {:?}: {:?}, {:?}, {:?}, {:?}  --  {:?}, {:?}, {:?}, {:?}", loss, a.r(), b.r(), c.r(), d.r(), grad_a, grad_b, grad_c, grad_d);
             }
+        }
+    }
+
+    #[test]
+    fn test_gradient_implicit_tracker() {
+        let env = TensorEnv::new();
+
+        let a = env.scalar(0.1);
+        let b = env.scalar(0.9);
+        let c = env.scalar(0.1);
+        let d = env.scalar(-0.1);
+
+        let x = env.random_lin(-PI, PI, 5_000);
+        let y = x._sin();
+
+        let learning_rate = env.scalar(1e-6);
+
+        for t in 0..2_000 {
+            env.with_tracker(|tracker| {
+                let y3 = d.r() * x.pow(3);
+                let y2 = c.r() * x.pow(2);
+                let y1 = b.r() * x.r();
+                let y_pred = y3 + y2 + y1 + a.r();
+
+                let loss = (y_pred - y.r()).pow(2).sum();
+
+                let grad_a = tracker.grad(loss.r(), a.r()).unwrap();
+                let grad_b = tracker.grad(loss.r(), b.r()).unwrap();
+                let grad_c = tracker.grad(loss.r(), c.r()).unwrap();
+                let grad_d = tracker.grad(loss.r(), d.r()).unwrap();
+
+                //TODO convenience for 'without tracker'
+                a._sub_in_place(grad_a.r()._mult(learning_rate.r()));
+                b._sub_in_place(grad_b.r()._mult(learning_rate.r()));
+                c._sub_in_place(grad_c.r()._mult(learning_rate.r()));
+                d._sub_in_place(grad_d.r()._mult(learning_rate.r()));
+
+                if t%100 == 0 {
+                    println!("loss {:?}: {:?}, {:?}, {:?}, {:?}  --  {:?}, {:?}, {:?}, {:?}", loss, a, b, c, d, grad_a, grad_b, grad_c, grad_d);
+                }
+            });
         }
     }
 }
