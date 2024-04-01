@@ -2,7 +2,7 @@ use std::cmp::max;
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::fmt::{Debug, Display, Formatter};
-use std::ops::{Add, Div, Mul, Neg, Sub};
+use std::ops::{Add, Div, Mul, Neg, Sub, SubAssign};
 use std::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::atomic::Ordering::Acquire;
@@ -110,7 +110,15 @@ impl <F: Float> TensorEnv<F> {
         code(tracker.as_ref());
 
         *self.implicit_tracker.write().unwrap() = prev;
-        //TODO return tracker? return some data from 'code'?
+    }
+
+    pub fn untracked(&self, code: impl FnOnce()) {
+        let prev = self.implicit_tracker.read().unwrap().clone();
+        *self.implicit_tracker.write().unwrap() = std::sync::Arc::new(NoTracker{});
+
+        code();
+
+        *self.implicit_tracker.write().unwrap() = prev;
     }
 
     pub fn current_tracker(&self) -> std::sync::Arc<dyn ExecutionTracker<F>> {
@@ -203,11 +211,25 @@ impl <F: Float> Sub for Tensor<F> {
         self.minus_full(rhs, self.env.current_tracker().as_ref())
     }
 }
+impl <F: Float> SubAssign for Tensor<F> {
+    fn sub_assign(&mut self, rhs: Self) {
+        //TODO tracking etc.
+        self._sub_in_place(rhs);
+    }
+}
+
 impl <F: Float> Mul for Tensor<F> {
     type Output = Self;
 
     fn mul(self, rhs: Self) -> Self::Output {
         self.mult_full(rhs, self.env.current_tracker().as_ref())
+    }
+}
+impl <F: Float> Mul<F> for Tensor<F> { //TODO F * T<F>
+    type Output = Self;
+
+    fn mul(self, rhs: F) -> Self::Output {
+        self.mult_full(self.env.scalar(rhs), self.env.current_tracker().as_ref())
     }
 }
 
@@ -890,15 +912,15 @@ mod test {
     fn test_gradient_implicit_tracker() {
         let env = TensorEnv::new();
 
-        let a = env.scalar(0.1);
-        let b = env.scalar(0.9);
-        let c = env.scalar(0.1);
-        let d = env.scalar(-0.1);
+        let mut a = env.scalar(0.1);
+        let mut b = env.scalar(0.9);
+        let mut c = env.scalar(0.1);
+        let mut d = env.scalar(-0.1);
 
         let x = env.random_lin(-PI, PI, 5_000);
         let y = x._sin();
 
-        let learning_rate = env.scalar(1e-6);
+        let learning_rate = 1e-6;
 
         for t in 0..2_000 {
             env.with_tracker(|tracker| {
@@ -914,14 +936,15 @@ mod test {
                 let grad_c = tracker.grad(loss.r(), c.r()).unwrap();
                 let grad_d = tracker.grad(loss.r(), d.r()).unwrap();
 
-                //TODO convenience for 'without tracker'
-                a._sub_in_place(grad_a.r()._mult(learning_rate.r()));
-                b._sub_in_place(grad_b.r()._mult(learning_rate.r()));
-                c._sub_in_place(grad_c.r()._mult(learning_rate.r()));
-                d._sub_in_place(grad_d.r()._mult(learning_rate.r()));
+                env.untracked(|| {
+                    a -= grad_a * learning_rate;
+                    b -= grad_b * learning_rate;
+                    c -= grad_c * learning_rate;
+                    d -= grad_d * learning_rate;
+                });
 
                 if t%100 == 0 {
-                    println!("loss {:?}: {:?}, {:?}, {:?}, {:?}  --  {:?}, {:?}, {:?}, {:?}", loss, a, b, c, d, grad_a, grad_b, grad_c, grad_d);
+                    println!("loss {:?}: {:?}, {:?}, {:?}, {:?}", loss, a, b, c, d);
                 }
             });
         }
