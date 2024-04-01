@@ -9,6 +9,7 @@ use std::sync::atomic::Ordering::Acquire;
 
 use lazy_static::lazy_static;
 use rand::random;
+use rustc_hash::FxHashMap;
 use triomphe::Arc;
 
 //TODO feature flag
@@ -86,6 +87,13 @@ impl <F: Float> TensorEnv<F> {
 
     pub fn scalar(&self, value: F) -> Tensor<F> {
         self.assemble(Geometry::scalar(),vec![value])
+    }
+
+    pub fn zero(&self) -> Tensor<F> {
+        self.scalar(F::zero())
+    }
+    pub fn one(&self) -> Tensor<F> {
+        self.scalar(F::one())
     }
 
     pub fn vector(&self, values: Vec<F>) -> Tensor<F> {
@@ -459,13 +467,10 @@ impl<F: Float> Tensor<F> {
     }
 }
 
-
-//TODO 'requires_grad' with possible 'ultimate input' variables on construction as an optimization?
-
 pub trait ExecutionTracker<F: Float> {
     fn calc(&self, expr: TrackerExpression<F>) -> Tensor<F>;
 
-    fn grad(&self, calculated: Tensor<F>, for_ultimate_input: Tensor<F>) -> Option<Tensor<F>>;
+    fn grad(&self, calculated: &Tensor<F>, for_ultimate_input: &Tensor<F>) -> Tensor<F>;
 }
 
 pub struct NoTracker {}
@@ -474,8 +479,8 @@ impl <F: Float> ExecutionTracker<F> for NoTracker {
         expr.calc()
     }
 
-    fn grad(&self, _calculated: Tensor<F>, _for_ultimate_input: Tensor<F>) -> Option<Tensor<F>> {
-        None
+    fn grad(&self, _calculated: &Tensor<F>, _for_ultimate_input: &Tensor<F>) -> Tensor<F> {
+        _calculated.env.zero()
     }
 }
 
@@ -506,79 +511,78 @@ impl <F: Float> ExecutionTracker<F> for RegularExecutionTracker<F> {
     }
 
     /// NB: gradient calculation is outside of execution tracking
-    fn grad(&self, calculated: Tensor<F>, for_ultimate_input: Tensor<F>) -> Option<Tensor<F>> {
+    fn grad(&self, calculated: &Tensor<F>, for_ultimate_input: &Tensor<F>) -> Tensor<F> {
         trace!("{}grad [{:?}]", indent, calculated.id);
 
-        if calculated.id == for_ultimate_input.id {
-            //TODO optimize - move into the ops?
+        let mut grad_cache: FxHashMap<u32, Tensor<F>> = Default::default();
+        grad_cache.insert(for_ultimate_input.id, for_ultimate_input.env.one()); // pre-filling for termination
 
+        let mut worklist = vec![calculated.r()];
 
-            // println!("TODO multi-dim");
-            //TODO multi-dim? well-known ONE tensor?
+        while let Some(cur) = worklist.pop() {
+            let cur_grad: Tensor<F> = if let Some((version, expr)) = self.dependencies.read().unwrap().get(&cur.id) {
+                if *version != cur.get_version() {
+                    // the calculated tensor was modified in place since the gradient was calculated
+                    todo!()
+                }
+                match expr {
+                    TrackerExpression::Single(t, op) => {
+                        trace!("{}single: {:?}", worklist.len(), op);
 
+                        // 'single' means applying a function f to a (potentially calculated) inner
+                        //   tensor g, with the constraint that f itself is independent of any tracked
+                        //   variables. So the chain rule applies: ( f(g(x)) )' = f'(g(x) * g'(x)
 
-            return Some(calculated.env.scalar(F::one()));
-        }
+                        // We start with g'(x) because it may turn out not to depend on the
+                        //  variables we are interested in
 
-
-        //TODO store for caching
-
-
-        let result = if let Some((version, expr)) = self.dependencies.read().unwrap().get(&calculated.id) {
-            if *version != calculated.get_version() {
-                // the calculated tensor was modified in place since the gradient was calculated
-                todo!()
-            }
-
-            match expr {
-                TrackerExpression::Single(t, op) => {
-                    trace!("{}single: {:?}", indent, op);
-
-                    // 'single' means applying a function f to a (potentially calculated) inner
-                    //   tensor g, with the constraint that f itself is independent of any tracked
-                    //   variables. So the chain rule applies: ( f(g(x)) )' = f'(g(x) * g'(x)
-
-                    // We start with g'(x) because it may turn out not to depend on the
-                    //  variables we are interested in
-
-                    //TODO avoid recursion
-                    //TODO store / cache gradients?
-                    let inner_grad = self.grad(t.r(), for_ultimate_input);
-
-                    trace!("after inner_grad [{:?}]", calculated.id);
-
-                    if let Some(inner_grad) = inner_grad {
-                        //TODO assert that the inner gradient matches the number of ultimate input vars
-
-                        Some(op.grad(t.r(), inner_grad))
-                        // let outer_grad = op.grad(t.r(), inner_grad);
-                        // {
-                        //     multiply outer and inner gradient per element, i.e. apply the
-                        //      chain rule per element
-                            // return Some(outer_grad._mult(inner_grad));
-                        // }
+                        if let Some(inner_grad) = grad_cache.get(&t.id) {
+                            trace!("after inner_grad [{:?}]", calculated.id);
+                            if inner_grad.is_zero() {
+                                inner_grad.r()
+                            } else {
+                                op.grad(t.r(), inner_grad.r())
+                            }
+                        }
+                        else {
+                            worklist.push(cur);
+                            worklist.push(t.r());
+                            continue;
+                        }
                     }
-                    else {
-                        None
+                    TrackerExpression::Two(t1, t2, op) => {
+                        trace!("{}two: {:?}", worklist.len(), op);
+                        match (grad_cache.get(&t1.id), grad_cache.get(&t2.id)) {
+                            (Some(grad1), Some(grad2)) => {
+                                op.grad(t1.r(), grad1.r(), t2.r(), grad2.r())
+                            }
+                            (grad1, grad2) => {
+                                worklist.push(cur);
+                                if grad1.is_none() {
+                                    worklist.push(t1.r());
+                                }
+                                if grad2.is_none() {
+                                    worklist.push(t2.r());
+                                }
+                                continue;
+                            }
+                        }
                     }
                 }
-                TrackerExpression::Two(t1, t2, op) => {
-                    trace!("{}two: {:?}", indent, op);
-                    let grad1 = self.grad(t1.r(), for_ultimate_input.r());
-                    let grad2 = self.grad(t2.r(), for_ultimate_input);
-
-                    return op.grad(t1.r(), grad1, t2.r(), grad2);
-                }
             }
+            else {
+                // some part of the calculation that was not tracked by this tracker
+                //TODO logging
+                cur.env.zero()
+            };
+
+            if cur.id == calculated.id {
+                return cur_grad.r();
+            }
+            grad_cache.insert(cur.id, cur_grad);
         }
-        else {
-            // the queried tensor was not calculated with this tracker -> end of traversal
-            None
-        };
 
-        trace!("{}---- [{:?}]", indent, calculated.id);
-
-        result
+        panic!("internal error in gradient calculation")
     }
 }
 
@@ -601,7 +605,7 @@ pub trait SingleTensorOp<F: Float>: Debug {
 }
 pub trait TwoTensorOp<F: Float>: Debug {
     fn apply<'env>(&self, t1: Tensor<F>, t2: Tensor<F>) -> Tensor<F>;
-    fn grad<'env>(&self, t1: Tensor<F>, grad1: Option<Tensor<F>>, t2: Tensor<F>, grad2: Option<Tensor<F>>) -> Option<Tensor<F>>;
+    fn grad<'env>(&self, t1: Tensor<F>, grad1: Tensor<F>, t2: Tensor<F>, grad2: Tensor<F>) -> Tensor<F>;
 }
 
 #[derive(Debug)]
@@ -627,16 +631,11 @@ impl <F: Float> TwoTensorOp<F> for MultOp {
         t1._mult(t2)
     }
 
-    fn grad<'env>(&self, t1: Tensor<F>, grad1: Option<Tensor<F>>, t2: Tensor<F>, grad2: Option<Tensor<F>>) -> Option<Tensor<F>> {
-        let term1 = grad1.map(|grad1| grad1._mult(t2.r()));
-        let term2 = grad2.map(|grad2| t1._mult(grad2));
+    fn grad<'env>(&self, t1: Tensor<F>, grad1: Tensor<F>, t2: Tensor<F>, grad2: Tensor<F>) -> Tensor<F> {
+        let term1 = grad1._mult(t2);
+        let term2 = t1._mult(grad2);
 
-        match (term1, term2) {
-            (None, None) => None,
-            (Some(t1), None) => Some(t1),
-            (None, Some(t2)) => Some(t2),
-            (Some(t1), Some(t2)) => Some(t1._mult(t2))
-        }
+        term1._plus(term2)
     }
 }
 
@@ -647,13 +646,8 @@ impl <F: Float> TwoTensorOp<F> for PlusOp {
         t1._plus(t2)
     }
 
-    fn grad<'env>(&self, _t1: Tensor<F>, grad1: Option<Tensor<F>>, _t2: Tensor<F>, grad2: Option<Tensor<F>>) -> Option<Tensor<F>> {
-        match (grad1, grad2) {
-            (None, None) => None,
-            (Some(t1), None) => Some(t1),
-            (None, Some(t2)) => Some(t2),
-            (Some(t1), Some(t2)) => Some(t1._plus(t2))
-        }
+    fn grad<'env>(&self, _t1: Tensor<F>, grad1: Tensor<F>, _t2: Tensor<F>, grad2: Tensor<F>) -> Tensor<F> {
+        grad1._plus(grad2)
     }
 }
 
@@ -664,13 +658,8 @@ impl <F: Float> TwoTensorOp<F> for MinusOp {
         t1._minus(t2)
     }
 
-    fn grad<'env>(&self, _t1: Tensor<F>, grad1: Option<Tensor<F>>, _t2: Tensor<F>, grad2: Option<Tensor<F>>) -> Option<Tensor<F>> {
-        match (grad1, grad2) {
-            (None, None) => None,
-            (Some(t1), None) => Some(t1),
-            (None, Some(t2)) => Some(t2.env.scalar(F::zero())._minus(t2)),
-            (Some(t1), Some(t2)) => Some(t1._minus(t2))
-        }
+    fn grad<'env>(&self, _t1: Tensor<F>, grad1: Tensor<F>, _t2: Tensor<F>, grad2: Tensor<F>) -> Tensor<F> {
+        grad1._minus(grad2)
     }
 }
 
@@ -723,7 +712,7 @@ mod test {
             let y = x.pow_int_full(pow, &tracker);
 
             y.assert_is_pretty_much_equal_to(&env.scalar(y_expected[0]));
-            tracker.grad(y.r(), x.r()).unwrap().assert_is_pretty_much_equal_to(&env.scalar(grad_expected[0]));
+            tracker.grad(&y, &x).assert_is_pretty_much_equal_to(&env.scalar(grad_expected[0]));
         }
 
         let tracker = RegularExecutionTracker::new();
@@ -732,7 +721,7 @@ mod test {
         let y = x.pow_int_full(pow, &tracker);
 
         y.assert_is_pretty_much_equal_to(&env.vector(y_expected));
-        tracker.grad(y.r(), x.r()).unwrap().assert_is_pretty_much_equal_to(&env.vector(grad_expected));
+        tracker.grad(&y, &x).assert_is_pretty_much_equal_to(&env.vector(grad_expected));
     }
 
     #[rstest]
@@ -748,7 +737,7 @@ mod test {
             let x = env.scalar(x[0]).mult_full(q.r(), &tracker);
             let y = x.sum_full(&tracker);
             y.assert_is_pretty_much_equal_to(&env.scalar(y_expected));
-            tracker.grad(y, q.r()).unwrap().assert_is_pretty_much_equal_to(&env.scalar(grad_expected[0]));
+            tracker.grad(&y, &q).assert_is_pretty_much_equal_to(&env.scalar(grad_expected[0]));
         }
 
         let tracker = RegularExecutionTracker::new();
@@ -756,10 +745,10 @@ mod test {
         let x = env.vector(x).mult_full(q.r(), &tracker);
         let y = x.sum_full(&tracker);
         y.assert_is_pretty_much_equal_to(&env.scalar(y_expected));
-        tracker.grad(y, q).unwrap().assert_is_pretty_much_equal_to(&env.vector(grad_expected));
+        tracker.grad(&y, &q).assert_is_pretty_much_equal_to(&env.vector(grad_expected));
     }
 
-    fn vec_to_tensor<'env>(env: &'env TensorEnv<f64>, x: Vec<f64>) -> Tensor<f64> {
+    fn vec_to_tensor(env: &TensorEnv<f64>, x: Vec<f64>) -> Tensor<f64> {
         if x.len() == 1 {
             env.scalar(x[0])
         }
@@ -791,8 +780,8 @@ mod test {
         let s2 = b.r().mult_full(q2.r(), &tracker);
         let y = s1.plus_full(s2, &tracker);
         y.assert_is_pretty_much_equal_to(&sum);
-        tracker.grad(y.r(), a).unwrap().assert_is_pretty_much_equal_to(&grad_a);
-        tracker.grad(y.r(), b).unwrap().assert_is_pretty_much_equal_to(&grad_b);
+        tracker.grad(&y, &a).assert_is_pretty_much_equal_to(&grad_a);
+        tracker.grad(&y, &b).assert_is_pretty_much_equal_to(&grad_b);
     }
 
     #[rstest]
@@ -818,8 +807,8 @@ mod test {
         let s2 = b.r().mult_full(q2.r(), &tracker);
         let y = s1.minus_full(s2, &tracker);
         y.assert_is_pretty_much_equal_to(&sum);
-        tracker.grad(y.r(), a).unwrap().assert_is_pretty_much_equal_to(&grad_a);
-        tracker.grad(y.r(), b).unwrap().assert_is_pretty_much_equal_to(&grad_b);
+        tracker.grad(&y, &a).assert_is_pretty_much_equal_to(&grad_a);
+        tracker.grad(&y, &b).assert_is_pretty_much_equal_to(&grad_b);
     }
 
     #[rstest]
@@ -855,8 +844,8 @@ mod test {
         let s2 = b.r().mult_full(q2.r(), &tracker);
         let y = s1.mult_full(s2, &tracker);
         y.assert_is_pretty_much_equal_to(&product);
-        tracker.grad(y.r(), a).unwrap().assert_is_pretty_much_equal_to(&grad_a);
-        tracker.grad(y.r(), b).unwrap().assert_is_pretty_much_equal_to(&grad_b);
+        tracker.grad(&y, &a).assert_is_pretty_much_equal_to(&grad_a);
+        tracker.grad(&y, &b).assert_is_pretty_much_equal_to(&grad_b);
     }
 
     #[test]
@@ -891,10 +880,10 @@ mod test {
             let loss = y_pred.minus_full(y.r(), &tracker).pow_int_full(2, &tracker).sum_full(&tracker);
 
             trace!("-------- before");
-            let grad_a = tracker.grad(loss.r(), a.r()).unwrap();
-            let grad_b = tracker.grad(loss.r(), b.r()).unwrap();
-            let grad_c = tracker.grad(loss.r(), c.r()).unwrap();
-            let grad_d = tracker.grad(loss.r(), d.r()).unwrap();
+            let grad_a = tracker.grad(&loss, &a);
+            let grad_b = tracker.grad(&loss, &b);
+            let grad_c = tracker.grad(&loss, &c);
+            let grad_d = tracker.grad(&loss, &d);
 
             a._sub_in_place(grad_a.r()._mult(learning_rate.r()));
             b._sub_in_place(grad_b.r()._mult(learning_rate.r()));
@@ -931,10 +920,10 @@ mod test {
 
                 let loss = (y_pred - y.r()).pow(2).sum();
 
-                let grad_a = tracker.grad(loss.r(), a.r()).unwrap();
-                let grad_b = tracker.grad(loss.r(), b.r()).unwrap();
-                let grad_c = tracker.grad(loss.r(), c.r()).unwrap();
-                let grad_d = tracker.grad(loss.r(), d.r()).unwrap();
+                let grad_a = tracker.grad(&loss, &a);
+                let grad_b = tracker.grad(&loss, &b);
+                let grad_c = tracker.grad(&loss, &c);
+                let grad_d = tracker.grad(&loss, &d);
 
                 env.untracked(|| {
                     a -= grad_a * learning_rate;
