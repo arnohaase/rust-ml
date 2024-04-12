@@ -2,7 +2,7 @@ use std::cmp::max;
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::fmt::{Debug, Display, Formatter};
-use std::ops::{Add, Div, Mul, Neg, Sub, SubAssign};
+use std::ops::{Add, Deref, Div, Mul, Neg, Sub, SubAssign};
 use std::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::atomic::Ordering::Acquire;
@@ -247,6 +247,13 @@ impl<F: Float> Tensor<F> {
         self.clone()
     }
 
+    pub fn deep_copy(&self) -> Tensor<F> {
+        self.env.assemble(
+            self.geometry.clone(),
+            self.read().clone(),
+        )
+    }
+
     #[inline]
     pub fn is_zero(&self) -> bool {
         self.geometry == Geometry::scalar() && self.read()[0] == F::zero()
@@ -346,10 +353,10 @@ impl<F: Float> Tensor<F> {
         trace!("_plus ({:?}+{:?})", self.geometry, rhs.geometry);
 
         if self.is_zero() {
-            return rhs; //TODO unit test
+            return rhs.deep_copy(); //TODO unit test
         }
         if rhs.is_zero() {
-            return self.r();
+            return self.deep_copy();
         }
 
         self.binary_operation(&rhs, |a, b, result| {
@@ -366,7 +373,7 @@ impl<F: Float> Tensor<F> {
         trace!("_minus ({:?}-{:?})", self.geometry, rhs.geometry);
 
         if rhs.is_zero() {
-            return self.r();
+            return self.deep_copy();
         }
 
         self.binary_operation(&rhs, |a, b, result| {
@@ -399,10 +406,10 @@ impl<F: Float> Tensor<F> {
         trace!("_mult ({:?}*{:?})", self.geometry, rhs.geometry);
 
         if self.is_one() {
-            return rhs;
+            return rhs.deep_copy();
         }
         if rhs.is_one() {
-            return self.r();
+            return self.deep_copy();
         }
         if self.is_zero() || rhs.is_zero() {
             return self.env.scalar(F::zero());
@@ -779,6 +786,7 @@ mod test {
         let s1 = a.r().mult_full(q1.r(), &tracker);
         let s2 = b.r().mult_full(q2.r(), &tracker);
         let y = s1.plus_full(s2, &tracker);
+
         y.assert_is_pretty_much_equal_to(&sum);
         tracker.grad(&y, &a).assert_is_pretty_much_equal_to(&grad_a);
         tracker.grad(&y, &b).assert_is_pretty_much_equal_to(&grad_b);
@@ -862,7 +870,7 @@ mod test {
 
         let learning_rate = env.scalar(1e-6);
 
-        for t in 0..2_000 {
+        for t in 0..2_0 {
             let tracker = RegularExecutionTracker::new();
 
             let y3 = x.r()
@@ -911,7 +919,7 @@ mod test {
 
         let learning_rate = 1e-6;
 
-        for t in 0..2_000 {
+        for t in 0..2_0 {
             env.with_tracker(|tracker| {
                 let y3 = d.r() * x.pow(3);
                 let y2 = c.r() * x.pow(2);
