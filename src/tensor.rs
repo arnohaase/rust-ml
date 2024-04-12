@@ -325,6 +325,7 @@ impl<F: Float> Tensor<F> {
                 self.env.assemble(self.geometry.clone(), result)
             }
             GeometryComparisonResult::SelfContainsOther(dims) => {
+                //NB: This assumes column-major representation
                 let num: usize = dims.iter().product();
                 for n in 0..num {
                     let offs = n * t2.len();
@@ -333,6 +334,7 @@ impl<F: Float> Tensor<F> {
                 self.env.assemble(self.geometry.clone(), result)
             }
             GeometryComparisonResult::OtherContainsSelf(dims) => {
+                //NB: This assumes column-major representation
                 let num: usize = dims.iter().product();
                 for n in 0..num {
                     let offs = n * t1.len();

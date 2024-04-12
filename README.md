@@ -32,7 +32,7 @@ geometry, e.g.
 
 * `[]` can be lifted to `[1]`, `[2]` or `[35]`
 * `[]` can be lifted to `[1][2]` or `[10][5][25]`
-* `[2]` can be lifted to `[5][2]`, `[10][2]` or `[4][9][2]` but not to `[5][4]` or `[10][1]`
+* `[2]` can be lifted to `[5][2]`, `[10][2]` or `[4][9][2]` but not to `[2][5]`, `[5][4]` or `[10][1]`
 * `[3][4]` can be lifted to `[2][3][4]` but not to `[3][4][2]`
 
 NB: Implicit lifting is done regardless of the tensor's position in a binary operation. In the sum `a+b`, both a and b
@@ -40,6 +40,7 @@ can be potentially lifted to match the other tensor's geometry.
 
 
 ## notes for documentation
+* column major
 * t.r()
 * multi threading: RwLock, 
 * env
