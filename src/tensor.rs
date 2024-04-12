@@ -248,6 +248,7 @@ impl<F: Float> Tensor<F> {
     }
 
     pub fn deep_copy(&self) -> Tensor<F> {
+        //TODO deep copying for '+0' & '*1' has significant negative impact on some benchmarks
         self.env.assemble(
             self.geometry.clone(),
             self.read().clone(),
@@ -870,7 +871,7 @@ mod test {
 
         let learning_rate = env.scalar(1e-6);
 
-        for t in 0..2_0 {
+        for t in 0..2_000 {
             let tracker = RegularExecutionTracker::new();
 
             let y3 = x.r()
@@ -919,7 +920,7 @@ mod test {
 
         let learning_rate = 1e-6;
 
-        for t in 0..2_0 {
+        for t in 0..2_000 {
             env.with_tracker(|tracker| {
                 let y3 = d.r() * x.pow(3);
                 let y2 = c.r() * x.pow(2);
