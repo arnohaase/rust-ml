@@ -12,6 +12,10 @@ lazy_static = "1"
 rand = "0"
 rustc-hash = "1"
 triomphe = "0.1"
+
+blas = "0.22"
+openblas-src = "0.10"
+
 #log = "0.4.21"
 #tracing = "0"
 #mathru = "0"

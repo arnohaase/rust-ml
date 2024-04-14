@@ -1,3 +1,6 @@
+extern crate blas;
+extern crate openblas_src;
+
 use std::cell::RefCell;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
@@ -12,6 +15,9 @@ pub mod linalg;
 pub mod layer;
 mod model;
 mod tensor;
+mod probieren;
+mod fixed;
+
 
 fn main() -> std::io::Result<()>{
     println!("starting at {:?}", Instant::now());

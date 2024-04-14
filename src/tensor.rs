@@ -2,7 +2,7 @@ use std::cmp::max;
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::fmt::{Debug, Display, Formatter};
-use std::ops::{Add, Deref, Div, Mul, Neg, Sub, SubAssign};
+use std::ops::{Add, Div, Mul, Neg, Sub, SubAssign};
 use std::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::atomic::Ordering::Acquire;
