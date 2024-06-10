@@ -5,7 +5,7 @@ edition = "2021"
 
 [dev-dependencies]
 rstest = "0"
-simple_logger = "4"
+#simple_logger = "4"
 
 [dependencies]
 lazy_static = "1"
@@ -14,7 +14,7 @@ rustc-hash = "1"
 triomphe = "0.1"
 
 blas = "0.22"
-openblas-src = "0.10"
+#openblas-src = "0.10"
 
 #log = "0.4.21"
 #tracing = "0"
@@ -24,7 +24,7 @@ openblas-src = "0.10"
 
 #autograd = "2.0.0-rc3"
 
-[profile.release]
-codegen-units = 1
-lto = "fat"
+#[profile.release]
+#codegen-units = 1
+#lto = "fat"
 
