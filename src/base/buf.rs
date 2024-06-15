@@ -1,4 +1,5 @@
 use std::cell::RefCell;
+use std::fmt::Formatter;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicU32, Ordering};
 
@@ -11,6 +12,10 @@ lazy_static! {
     static ref TENSOR_ID_COUNTER: AtomicU32 = AtomicU32::new(0);
 }
 
+pub fn new_tensor_id() -> u32 {
+    TENSOR_ID_COUNTER.fetch_add(1, Ordering::SeqCst)
+}
+
 
 #[derive(Clone)]
 pub struct Buf {
@@ -21,7 +26,7 @@ pub struct Buf {
 impl Buf {
     pub(crate) fn from_data(data: Vec<f64>) -> Buf {
         Buf {
-            id: TENSOR_ID_COUNTER.fetch_add(1, Ordering::SeqCst),
+            id: new_tensor_id(),
             version: Rc::new(RefCell::new(0)),
             data: Rc::new(RefCell::new(data)),
         }
@@ -37,8 +42,8 @@ impl Buf {
     pub fn version(&self) -> u32 {
         *self.version.borrow()
     }
-    pub fn with_data<X>(&self, f: impl FnOnce(&[f64]) -> X) -> X {
-        f(self.data.borrow().as_ref())
+    pub fn dump_data(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", &self.data.borrow())
     }
 }
 impl ElementWise for Buf {

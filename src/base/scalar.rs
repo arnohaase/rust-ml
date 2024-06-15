@@ -9,7 +9,8 @@ pub struct Scalar {
 }
 impl Debug for Scalar {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Scalar {}@{}:{}", self.id(), self.version(), self.with_data(|b| b[0]))
+        write!(f, "Scalar {}@{}:", self.id(), self.version())?;
+        self.buf.dump_data(f)
     }
 }
 impl Tensor for Scalar {
@@ -18,9 +19,6 @@ impl Tensor for Scalar {
     }
     fn version(&self) -> u32 {
         self.buf.version()
-    }
-    fn with_data<X>(&self, f: impl FnOnce(&[f64]) -> X) -> X {
-        self.buf.with_data(f)
     }
 }
 impl Scalar {
