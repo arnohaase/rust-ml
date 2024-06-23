@@ -23,6 +23,7 @@ impl Tensor for Matrix {
     fn version(&self) -> u32 {
         self.buf.version()
     }
+
 }
 impl Matrix {
     pub fn zero(num_rows: usize, num_cols: usize) -> Matrix {
