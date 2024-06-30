@@ -11,23 +11,13 @@ pub fn new_tensor_id() -> u32 {
     TENSOR_ID_COUNTER.fetch_add(1, Ordering::SeqCst)
 }
 
-
-#[derive(Clone)]
-pub enum Repr {
-    ZERO,
-    ONE,
-    BLAS { //TODO generalize to wgpu etc.
-        buf: Arc<RwLock<Vec<f64>>>,
-    }
-}
-
 #[derive(Clone)]
 pub struct Tensor {
     id: u32,
     version: Arc<AtomicU32>,
     //TODO do we need stride information for autograd stuff? if so, where to put it?
     dimensions: Vec<usize>,
-    repr: Repr,
+    buf: Arc<RwLock<Vec<f64>>>,
 }
 impl Tensor {
     pub fn from_raw(dimensions: Vec<usize>, buf: Vec<f64>) -> Tensor {
@@ -35,38 +25,28 @@ impl Tensor {
             id: new_tensor_id(),
             version: Default::default(),
             dimensions,
-            repr: Repr::BLAS { buf: Arc::new(RwLock::new(buf)) },
+            buf: Arc::new(RwLock::new(buf)),
         }
     }
 
-    pub fn zero(dimensions: Vec<usize>) -> Tensor {
-        Tensor {
-            id: new_tensor_id(),
-            version: Default::default(),
-            dimensions,
-            repr: Repr::ZERO,
-        }
+    pub fn zero() -> Tensor {
+        Self::from_raw(vec![], vec![0.0])
     }
 
-    pub fn one(first_half_dimensions: &[usize]) -> Tensor {
-        let mut dimensions: Vec<usize> = first_half_dimensions.into();
-        for i in (0..dimensions.len()).rev() {
-            dimensions.push(dimensions[i]);
-        }
-        Tensor {
-            id: new_tensor_id(),
-            version: Default::default(),
-            dimensions,
-            repr: Repr::ONE,
-        }
+    pub fn one() -> Tensor {
+        Self::from_raw(vec![], vec![1.0])
+    }
+
+    pub fn is_scalar(&self) -> bool {
+        self.dimensions.is_empty()
     }
 
     pub fn is_zero(&self) -> bool {
-        matches!(self.repr, Repr::ZERO)
+        self.is_scalar() && self.buf.read().unwrap()[0] == 0.0
     }
 
     pub fn is_one(&self) -> bool {
-        matches!(self.repr, Repr::ONE)
+        self.is_scalar() && self.buf.read().unwrap()[0] == 1.0
     }
 
     pub fn id(&self) -> u32 {
@@ -79,25 +59,25 @@ impl Tensor {
         &self.dimensions
     }
 
-    pub fn repr(&self) -> &Repr {
-        &self.repr
+    pub fn buf(&self) -> &RwLock<Vec<f64>> {
+        self.buf.as_ref()
+    }
+
+    pub fn clone_with_new_id(&self) -> Tensor {
+        let mut result = self.clone();
+        result.id = new_tensor_id();
+        result
     }
 }
 
 #[cfg(test)]
 mod test {
-    use rstest::rstest;
     use crate::n::tensor::Tensor;
 
-    #[rstest]
-    #[case(&[], &[])]
-    #[case(&[1], &[1, 1])]
-    #[case(&[2], &[2, 3])]
-    #[case(&[4, 5], &[4, 5, 5, 4])]
-    fn test_one(#[case] first_half_dim: &[usize], #[case] expected_dim: &[usize]) {
-        let one = Tensor::one(first_half_dim);
+    #[test]
+    fn test_one() {
+        let one = Tensor::one();
         assert!(one.is_one());
-        assert_eq!(expected_dim, one.dimensions);
     }
 }
 

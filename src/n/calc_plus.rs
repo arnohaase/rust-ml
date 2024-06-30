@@ -1,6 +1,7 @@
 use blas::daxpy;
 
-use crate::n::tensor::{Repr, Tensor};
+use crate::n::calc_utils::chunk_wise_bin_op;
+use crate::n::tensor::Tensor;
 use crate::n::tracker::BinaryTensorOp;
 
 pub struct BinOpPlus {}
@@ -10,21 +11,23 @@ impl BinOpPlus {
     }
 
     pub fn raw_plus(lhs: &Tensor, rhs: &Tensor) -> Tensor {
-        match (lhs.repr(), rhs.repr()) {
-            (&Repr::ZERO, _) => rhs.clone(),
-            (_, &Repr::ZERO) => lhs.clone(),
-            (&Repr::ONE, _) => todo!(),
-            (_, &Repr::ONE) => todo!(),
-            (Repr::BLAS { buf: lhs_buf }, Repr::BLAS { buf: rhs_buf }) => {
-                let lhs_buf = lhs_buf.read().unwrap();
-                let rhs_buf = rhs_buf.read().unwrap();
+        if lhs.is_zero() {
+            return rhs.clone_with_new_id();
+        }
+        if rhs.is_zero() {
+            return lhs.clone_with_new_id();
+        }
 
-                let mut result = lhs_buf.clone();
-                unsafe {
-                    daxpy(result.len() as i32, 1.0, rhs_buf.as_slice(), 1, result.as_mut_slice(), 1);
-                }
-                Tensor::from_raw(lhs.dimensions().into(), result)
-            }
+        //TODO special handling for one?
+
+        chunk_wise_bin_op(lhs, rhs, Self::raw_plus_chunk)
+    }
+
+    fn raw_plus_chunk(lhs: &[f64], rhs: &[f64], result: &mut Vec<f64>) {
+        let offs = result.len();
+        result.extend_from_slice(lhs);
+        unsafe {
+            daxpy(lhs.len() as i32, 1.0, rhs, 1, &mut result[offs..], 1);
         }
     }
 }

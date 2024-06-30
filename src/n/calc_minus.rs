@@ -1,6 +1,7 @@
 use blas::{daxpy, dscal};
 
-use crate::n::tensor::{Repr, Tensor};
+use crate::n::calc_utils::chunk_wise_bin_op;
+use crate::n::tensor::Tensor;
 use crate::n::tracker::BinaryTensorOp;
 
 pub fn raw_minus(lhs: &Tensor, rhs: &Tensor) -> Tensor {
@@ -15,27 +16,25 @@ impl BinOpMinus {
     }
 
     pub fn raw_minus(lhs: &Tensor, rhs: &Tensor) -> Tensor {
-        match (lhs.repr(), rhs.repr()) {
-            (Repr::ZERO, Repr::BLAS { buf}) => {
-                let mut result = buf.read().unwrap().clone();
-                unsafe {
-                    dscal(result.len() as i32, -1.0, result.as_mut_slice(), 1);
-                }
-                Tensor::from_raw(lhs.dimensions().into(), result)
+        if rhs.is_zero() {
+            return lhs.clone_with_new_id();
+        }
+        if lhs.is_zero() {
+            let mut result = rhs.buf().read().unwrap().clone();
+            unsafe {
+                dscal(result.len() as i32, -1.0, result.as_mut_slice(), 1);
             }
-            (_, Repr::ZERO) => lhs.clone(),
-            (Repr::ONE, _) => todo!(),
-            (_, Repr::ONE) => todo!(),
-            (Repr::BLAS { buf: lhs_buf }, Repr::BLAS { buf: rhs_buf }) => {
-                let lhs_buf = lhs_buf.read().unwrap();
-                let rhs_buf = rhs_buf.read().unwrap();
+            return Tensor::from_raw(lhs.dimensions().into(), result);
+        }
 
-                let mut result = lhs_buf.clone();
-                unsafe {
-                    daxpy(result.len() as i32, -1.0, rhs_buf.as_slice(), 1, result.as_mut_slice(), 1);
-                }
-                Tensor::from_raw(lhs.dimensions().into(), result)
-            }
+        chunk_wise_bin_op(lhs, rhs, Self::raw_minus_chunk)
+    }
+
+    fn raw_minus_chunk(lhs: &[f64], rhs: &[f64], result: &mut Vec<f64>) {
+        let offs = result.len();
+        result.extend_from_slice(lhs);
+        unsafe {
+            daxpy(lhs.len() as i32, -1.0, rhs, 1, &mut result[offs..], 1);
         }
     }
 }
@@ -49,7 +48,7 @@ impl BinaryTensorOp for BinOpMinus {
         match (lhs_grad, rhs_grad) {
             (None, None) => None,
             (Some(lhs_grad), None) => Some(lhs_grad.clone()),
-            (None, Some(rhs_grad)) => Some(raw_minus(&Tensor::zero(rhs_grad.dimensions().into()), rhs_grad)),
+            (None, Some(rhs_grad)) => Some(raw_minus(&Tensor::zero(), rhs_grad)),
             (Some(lhs_grad), Some(rhs_grad)) => Some(raw_minus(lhs_grad, rhs_grad)),
         }
     }

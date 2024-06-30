@@ -79,7 +79,7 @@ impl GradientCalcWorker {
             grad_cache: Default::default(),
             work_list: vec![],
         };
-        result.grad_cache.insert(for_ultimate_input.id(), Some(Tensor::one(for_ultimate_input.dimensions()))); // pre-filling for termination
+        result.grad_cache.insert(for_ultimate_input.id(), Some(Tensor::one())); // pre-filling for termination
         result
     }
 
