@@ -76,8 +76,7 @@ mod test {
 
     #[test]
     fn test_one() {
-        let one = Tensor::one();
-        assert!(one.is_one());
+        assert!(Tensor::one().is_one());
     }
 }
 

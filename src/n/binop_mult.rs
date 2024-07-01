@@ -1,6 +1,6 @@
 use blas::dscal;
 
-use crate::n::calc_plus::BinOpPlus;
+use crate::n::binop_plus::BinOpPlus;
 use crate::n::calc_utils::chunk_wise_bin_op;
 use crate::n::tensor::Tensor;
 use crate::n::tracker::BinaryTensorOp;
