@@ -37,7 +37,7 @@ pub fn chunk_wise_bin_op(lhs: &Tensor, rhs: &Tensor, chunk_op: impl Fn(&[f64], &
             result_buf = Vec::with_capacity(lhs_buf.len());
             result_dim = lhs.dimensions().into();
             for lhs_chunk in lhs_buf.chunks(chunk_size) {
-                chunk_op(&lhs_chunk, &rhs_buf, &mut result_buf);
+                chunk_op(lhs_chunk, &rhs_buf, &mut result_buf);
             }
         }
         FitDimensionsResult::RightContainsLeft { chunk_size } => {

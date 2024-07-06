@@ -1,3 +1,4 @@
+use std::fmt::{Debug, Formatter};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::RwLock;
 
@@ -19,6 +20,16 @@ pub struct Tensor {
     dimensions: Vec<usize>,
     buf: Arc<RwLock<Vec<f64>>>,
 }
+impl Debug for Tensor {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self.dimensions().len() {
+            0 => write!(f, "{}", self.buf.read().unwrap()[0]),
+            1 => write!(f, "{:?}", self.buf.read()),
+            _ => write!(f, "TODO"),
+        }
+    }
+}
+
 impl Tensor {
     pub fn from_raw(dimensions: Vec<usize>, buf: Vec<f64>) -> Tensor {
         Tensor {
@@ -27,6 +38,14 @@ impl Tensor {
             dimensions,
             buf: Arc::new(RwLock::new(buf)),
         }
+    }
+
+    pub fn scalar(x: f64) -> Tensor {
+        Self::from_raw(vec![], vec![x])
+    }
+
+    pub fn vector(xs: Vec<f64>) -> Tensor {
+        Self::from_raw(vec![xs.len()], xs)
     }
 
     pub fn zero() -> Tensor {

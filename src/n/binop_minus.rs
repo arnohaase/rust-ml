@@ -40,7 +40,6 @@ impl BinOpMinus {
 }
 impl BinaryTensorOp for BinOpMinus {
     fn calc(&self, lhs: &Tensor, rhs: &Tensor) -> Tensor {
-        assert_eq!(lhs.dimensions(), rhs.dimensions());
         Self::raw_minus(lhs, rhs)
     }
 

@@ -5,10 +5,10 @@ use crate::n::calc_utils::chunk_wise_bin_op;
 use crate::n::tensor::Tensor;
 use crate::n::tracker::BinaryTensorOp;
 
-pub struct BinOpMultScalar {}
-impl BinOpMultScalar {
-    pub fn new() -> BinOpMultScalar {
-        BinOpMultScalar{}
+pub struct BinOpMult {}
+impl BinOpMult {
+    pub fn new() -> BinOpMult {
+        BinOpMult{}
     }
 
     pub fn raw_mult(lhs: &Tensor, rhs: &Tensor) -> Tensor {
@@ -47,17 +47,16 @@ impl BinOpMultScalar {
         }
     }
 }
-impl BinaryTensorOp for BinOpMultScalar {
+impl BinaryTensorOp for BinOpMult {
     fn calc(&self, lhs: &Tensor, rhs: &Tensor) -> Tensor {
-        assert_eq!(rhs.dimensions(), &[]);
-        Self::raw_mult_scalar(lhs, rhs)
+        Self::raw_mult(lhs, rhs)
     }
 
     fn grad(&self, lhs: &Tensor, lhs_grad: &Option<Tensor>, rhs: &Tensor, rhs_grad: &Option<Tensor>) -> Option<Tensor> {
         match (lhs_grad, rhs_grad) {
             (None, None) => None,
-            (Some(lhs_grad), None) => Some(lhs_grad.clone()),
-            (None, Some(rhs_grad)) => Some(rhs_grad.clone()),
+            (Some(lhs_grad), None) => Some(Self::raw_mult(lhs_grad, rhs)),
+            (None, Some(rhs_grad)) => Some(Self::raw_mult(lhs, rhs_grad)),
             (Some(lhs_grad), Some(rhs_grad)) => {
                 Some(BinOpPlus::raw_plus(
                     &Self::raw_mult(lhs_grad, rhs),

@@ -3,8 +3,8 @@ name = "rust-ml"
 version = "0.1.0"
 edition = "2021"
 
-[dev-dependencies]
-rstest = "0"
+#[dev-dependencies]
+#rstest = "0"
 #simple_logger = "4"
 
 [dependencies]
@@ -14,7 +14,7 @@ rustc-hash = "1"
 triomphe = "0.1"
 
 blas = "0.22"
-#openblas-src = "0.10"
+openblas-src = { version = "0.10", features = ["static"] }
 
 #log = "0.4.21"
 #tracing = "0"

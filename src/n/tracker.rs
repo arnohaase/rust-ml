@@ -89,6 +89,8 @@ impl GradientCalcWorker {
         while let Some(cur) = self.work_list.pop() {
             let cur_id = cur.id();
 
+            let wl = self.work_list.iter().map(|t| t.id()).collect::<Vec<_>>();
+
             let cur_grad: Option<Tensor> = if let Some((version, expr)) = dependencies.get(&cur.id()) {
                 if *version != cur.version() {
                     // the calculated tensor was modified in place since the gradient was calculated
@@ -96,8 +98,8 @@ impl GradientCalcWorker {
                 }
 
                 let cur_result = match expr {
-                    TrackerExpression::Unary(t, op) => self.grad_unary(cur, t, op.as_ref()),
-                    TrackerExpression::Binary(t1, t2, op) => self.grad_binary(cur, &t1, &t2, op.as_ref()),
+                    TrackerExpression::Unary(t, op) => self.grad_unary(&cur, t, op.as_ref()),
+                    TrackerExpression::Binary(t1, t2, op) => self.grad_binary(&cur, &t1, &t2, op.as_ref()),
                 };
 
                 if let Some(g) = cur_result {
@@ -121,7 +123,7 @@ impl GradientCalcWorker {
         None
     }
 
-    fn grad_unary(&mut self, cur: Tensor, t: &Tensor, op: &dyn UnaryTensorOp) -> Option<Option<Tensor>> {
+    fn grad_unary(&mut self, cur: &Tensor, t: &Tensor, op: &dyn UnaryTensorOp) -> Option<Option<Tensor>> {
         // 'Unary' means applying a function f to a (potentially calculated) inner
         //   tensor g, with the constraint that f itself is independent of any tracked
         //   variables. So the chain rule applies: ( f(g(x)) )' = f'(g(x) * g'(x)
@@ -129,38 +131,112 @@ impl GradientCalcWorker {
         // We start with g'(x) because it may turn out not to depend on the
         //  variables we are interested in
 
-        Some(if let Some(inner_grad) = self.grad_cache.get(&t.id()) {
+        if let Some(inner_grad) = self.grad_cache.get(&t.id()) {
             // the inner gradient is calculated already
 
             if inner_grad.is_some() {
-                op.grad(t, inner_grad)
-            } else {
-                None
+                Some(op.grad(t, inner_grad))
             }
-        } else {
-            self.work_list.push(cur);
-            self.work_list.push(t.clone());
-            return None;
-        })
+            else {
+                Some(None)
+            }
+        }
+        else {
+            self.work_list.push(cur.clone());
+            self.work_list.push(t.clone()); //TODO store ids in the expressions?
+            None
+        }
     }
 
-    fn grad_binary(&mut self, cur: Tensor, t1: &Tensor, t2: &Tensor, op: &dyn BinaryTensorOp) -> Option<Option<Tensor>> {
+    fn grad_binary(&mut self, cur: &Tensor, t1: &Tensor, t2: &Tensor, op: &dyn BinaryTensorOp) -> Option<Option<Tensor>> {
         let opt_grad_1 = self.grad_cache.get(&t1.id());
         let opt_grad_2 = self.grad_cache.get(&t2.id());
-        Some(match (opt_grad_1, opt_grad_2) {
-            (Some(grad_1), Some(grad_2)) => {
-                op.grad(t1, grad_1, t2, grad_2)
-            }
+        match (opt_grad_1, opt_grad_2) {
+            (Some(grad_1), Some(grad_2)) =>
+                Some(op.grad(t1, grad_1, t2, grad_2)),
             _ => {
-                self.work_list.push(cur);
-                if opt_grad_1.is_some() {
+                self.work_list.push(cur.clone());
+                if opt_grad_1.is_none() {
                     self.work_list.push(t1.clone());
                 }
-                if opt_grad_2.is_some() {
+                if opt_grad_2.is_none() {
                     self.work_list.push(t2.clone());
                 }
-                return None;
+                None
             }
-        })
+        }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use rand::Rng;
+    use crate::n::binop_minus::BinOpMinus;
+    use crate::n::binop_mult::BinOpMult;
+    use crate::n::binop_plus::BinOpPlus;
+
+    use crate::n::tensor::Tensor;
+    use crate::n::tracker::{ExecutionTracker, RegularExecutionTracker, TrackerExpression};
+    use crate::n::unop_avg::UnOpAvg;
+
+    #[test]
+    fn test_sin_poly() {
+        const EPS: f64 = 1e-2;
+
+        // approximate sin(x) by a*x^3 + b*x^2 + c*x + d
+
+        let mut a = Tensor::scalar(rand::thread_rng().gen_range(-1.0..1.0));
+        let mut b = Tensor::scalar(rand::thread_rng().gen_range(-1.0..1.0));
+        let mut c = Tensor::scalar(rand::thread_rng().gen_range(-1.0..1.0));
+        let mut d = Tensor::scalar(rand::thread_rng().gen_range(-1.0..1.0));
+
+        let mut xs = Vec::new();
+        let mut y_ref = Vec::new();
+        for _ in 0..2000 {
+            let x: f64 = rand::thread_rng().gen_range(-1.6..1.6);
+            xs.push(x);
+            y_ref.push(x.sin());
+        }
+        let xs = Tensor::vector(xs);
+        let y_ref = Tensor::vector(y_ref);
+
+        for n in 0..10000 {
+            let tracker = RegularExecutionTracker::new();
+
+            let t3 = tracker.calc(TrackerExpression::Binary(xs.clone(), xs.clone(), Box::new(BinOpMult {})));
+            let t3 = tracker.calc(TrackerExpression::Binary(t3.clone(), xs.clone(), Box::new(BinOpMult {})));
+            let t3 = tracker.calc(TrackerExpression::Binary(t3.clone(), a.clone(), Box::new(BinOpMult {})));
+
+            let t2 = tracker.calc(TrackerExpression::Binary(xs.clone(), xs.clone(), Box::new(BinOpMult {})));
+            let t2 = tracker.calc(TrackerExpression::Binary(t2.clone(), b.clone(), Box::new(BinOpMult {})));
+
+            let t1 = tracker.calc(TrackerExpression::Binary(xs.clone(), c.clone(), Box::new(BinOpMult {})));
+
+            let poly = tracker.calc(TrackerExpression::Binary(t3, t2, Box::new(BinOpPlus {})));
+            let poly = tracker.calc(TrackerExpression::Binary(poly, t1, Box::new(BinOpPlus {})));
+            let poly = tracker.calc(TrackerExpression::Binary(poly, d.clone(), Box::new(BinOpPlus {})));
+
+            let dy = tracker.calc(TrackerExpression::Binary(poly, y_ref.clone(), Box::new(BinOpMinus {})));
+            let dy = tracker.calc(TrackerExpression::Binary(dy.clone(), dy, Box::new(BinOpMult {})));
+
+            let err = tracker.calc(TrackerExpression::Unary(dy, Box::new(UnOpAvg {})));
+
+            let grad_a = tracker.grad(&err, &a).unwrap();
+            let grad_b = tracker.grad(&err, &b).unwrap();
+            let grad_c = tracker.grad(&err, &c).unwrap();
+            let grad_d = tracker.grad(&err, &d).unwrap();
+
+            BinOpPlus::plus_in_place(&mut a, &grad_a, -EPS);
+            BinOpPlus::plus_in_place(&mut b, &grad_b, -EPS);
+            BinOpPlus::plus_in_place(&mut c, &grad_c, -EPS);
+            BinOpPlus::plus_in_place(&mut d, &grad_d, -EPS);
+
+            if n%100 == 0 {
+                println!("{n}: {:?} - {:?} {:?} {:?} {:?}       {:?}*x^3 + {:?}*x^2 + {:?}*x + {:?}", err, grad_a, grad_b, grad_c, grad_d, a, b, c, d);
+                if err.buf().read().unwrap()[0] < 1e-5 {
+                    break;
+                }
+            }
+        }
     }
 }
