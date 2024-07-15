@@ -3,8 +3,8 @@ name = "rust-ml"
 version = "0.1.0"
 edition = "2021"
 
-#[dev-dependencies]
-#rstest = "0"
+[dev-dependencies]
+rstest = "0"
 #simple_logger = "4"
 
 [dependencies]

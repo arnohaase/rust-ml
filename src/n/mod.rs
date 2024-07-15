@@ -6,3 +6,4 @@ mod tracker;
 mod calc_utils;
 mod unop_sum;
 mod unop_avg;
+mod binop_polynomial;

@@ -89,8 +89,6 @@ impl GradientCalcWorker {
         while let Some(cur) = self.work_list.pop() {
             let cur_id = cur.id();
 
-            let wl = self.work_list.iter().map(|t| t.id()).collect::<Vec<_>>();
-
             let cur_grad: Option<Tensor> = if let Some((version, expr)) = dependencies.get(&cur.id()) {
                 if *version != cur.version() {
                     // the calculated tensor was modified in place since the gradient was calculated
@@ -103,6 +101,12 @@ impl GradientCalcWorker {
                 };
 
                 if let Some(g) = cur_result {
+                    println!("  {:?}: {:?} -> {:?}",
+                        self.work_list.iter().map(|i| i.id()).collect::<Vec<_>>(),
+                        cur_id,
+                        g,
+                    );
+
                     g
                 }
                 else {
@@ -110,8 +114,7 @@ impl GradientCalcWorker {
                 }
             }
             else {
-                // some part of the calculation that was not tracked by this tracker
-                //TODO logging
+                // some part of the calculation that was not tracked by this tracker, e.g. literals
                 None
             };
 
@@ -174,13 +177,14 @@ mod test {
     use crate::n::binop_minus::BinOpMinus;
     use crate::n::binop_mult::BinOpMult;
     use crate::n::binop_plus::BinOpPlus;
+    use crate::n::binop_polynomial::BinOpPolynomial;
 
     use crate::n::tensor::Tensor;
     use crate::n::tracker::{ExecutionTracker, RegularExecutionTracker, TrackerExpression};
     use crate::n::unop_avg::UnOpAvg;
 
     #[test]
-    fn test_sin_poly() {
+    fn test_sin_poly_mult() {
         const EPS: f64 = 1e-2;
 
         // approximate sin(x) by a*x^3 + b*x^2 + c*x + d
@@ -190,9 +194,16 @@ mod test {
         let mut c = Tensor::scalar(rand::thread_rng().gen_range(-1.0..1.0));
         let mut d = Tensor::scalar(rand::thread_rng().gen_range(-1.0..1.0));
 
+        let mut poly_def = Tensor::vector(vec![
+            d.buf().read().unwrap()[0],
+            c.buf().read().unwrap()[0],
+            b.buf().read().unwrap()[0],
+            a.buf().read().unwrap()[0],
+        ]);
+
         let mut xs = Vec::new();
         let mut y_ref = Vec::new();
-        for _ in 0..2000 {
+        for _ in 0..2 {
             let x: f64 = rand::thread_rng().gen_range(-1.6..1.6);
             xs.push(x);
             y_ref.push(x.sin());
@@ -200,7 +211,7 @@ mod test {
         let xs = Tensor::vector(xs);
         let y_ref = Tensor::vector(y_ref);
 
-        for n in 0..10000 {
+        for n in 0..10 {
             let tracker = RegularExecutionTracker::new();
 
             let t3 = tracker.calc(TrackerExpression::Binary(xs.clone(), xs.clone(), Box::new(BinOpMult {})));
@@ -231,8 +242,67 @@ mod test {
             BinOpPlus::plus_in_place(&mut c, &grad_c, -EPS);
             BinOpPlus::plus_in_place(&mut d, &grad_d, -EPS);
 
+            println!("{n}: {:?} : {:?} {:?} {:?} {:?}       {:?}*x^3 + {:?}*x^2 + {:?}*x + {:?}", err, grad_a, grad_b, grad_c, grad_d, a, b, c, d);
+
+            println!("-----------------");
+
+            let tracker = RegularExecutionTracker::new();
+
+            let p = tracker.calc(TrackerExpression::Binary(poly_def.clone(), xs.clone(), Box::new(BinOpPolynomial{})));
+
+            let dy = tracker.calc(TrackerExpression::Binary(p, y_ref.clone(), Box::new(BinOpMinus {})));
+            let dy = tracker.calc(TrackerExpression::Binary(dy.clone(), dy, Box::new(BinOpMult {})));
+
+            let err2 = tracker.calc(TrackerExpression::Unary(dy, Box::new(UnOpAvg {})));
+
+            let grad = tracker.grad(&err2, &poly_def).unwrap();
+            BinOpPlus::plus_in_place(&mut poly_def, &grad, -EPS);
+
+            println!(" b {:?} : {:?}    {:?}", err2, grad, poly_def);
+            if err.buf().read().unwrap()[0] < 1e-5 {
+                break;
+            }
+        }
+    }
+
+    #[test]
+    fn test_sin_poly_builtin() {
+        const EPS: f64 = 1e-2;
+
+        // approximate sin(x) by a*x^3 + b*x^2 + c*x + d
+
+        let mut poly = Tensor::vector(vec![
+            rand::thread_rng().gen_range(-1.0..1.0),
+            rand::thread_rng().gen_range(-1.0..1.0),
+            rand::thread_rng().gen_range(-1.0..1.0),
+            rand::thread_rng().gen_range(-1.0..1.0),
+        ]);
+
+        let mut xs = Vec::new();
+        let mut y_ref = Vec::new();
+        for _ in 0..2000 {
+            let x: f64 = rand::thread_rng().gen_range(-1.6..1.6);
+            xs.push(x);
+            y_ref.push(x.sin());
+        }
+        let xs = Tensor::vector(xs);
+        let y_ref = Tensor::vector(y_ref);
+
+        for n in 0..10000 {
+            let tracker = RegularExecutionTracker::new();
+
+            let p = tracker.calc(TrackerExpression::Binary(poly.clone(), xs.clone(), Box::new(BinOpPolynomial{})));
+
+            let dy = tracker.calc(TrackerExpression::Binary(p, y_ref.clone(), Box::new(BinOpMinus {})));
+            let dy = tracker.calc(TrackerExpression::Binary(dy.clone(), dy, Box::new(BinOpMult {})));
+
+            let err = tracker.calc(TrackerExpression::Unary(dy, Box::new(UnOpAvg {})));
+
+            let grad = tracker.grad(&err, &poly).unwrap();
+            BinOpPlus::plus_in_place(&mut poly, &grad, -EPS);
+
             if n%100 == 0 {
-                println!("{n}: {:?} - {:?} {:?} {:?} {:?}       {:?}*x^3 + {:?}*x^2 + {:?}*x + {:?}", err, grad_a, grad_b, grad_c, grad_d, a, b, c, d);
+                println!("{n}: {:?} - {:?}   {:?}", err, grad, poly);
                 if err.buf().read().unwrap()[0] < 1e-5 {
                     break;
                 }

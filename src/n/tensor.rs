@@ -24,11 +24,27 @@ impl Debug for Tensor {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self.dimensions().len() {
             0 => write!(f, "{}", self.buf.read().unwrap()[0]),
-            1 => write!(f, "{:?}", self.buf.read()),
-            _ => write!(f, "TODO"),
+            1 => write!(f, "{:?}", self.buf.read().unwrap()),
+            _ => write_rec(f, &self.buf().read().unwrap(), self.dimensions()),
         }
     }
 }
+
+fn write_rec(f: &mut Formatter<'_>, buf: &[f64], dimensions: &[usize]) -> std::fmt::Result {
+    if dimensions.len() == 1 {
+        write!(f, "{:?}", buf)
+    }
+    else {
+        write!(f, "[")?;
+        let inner_dims = &dimensions[1..];
+        let chunk_size: usize = inner_dims.iter().product();
+        for chunk in buf.chunks(chunk_size) {
+            write_rec(f, chunk, inner_dims)?;
+        }
+        write!(f, "]")
+    }
+}
+
 
 impl Tensor {
     pub fn from_raw(dimensions: Vec<usize>, buf: Vec<f64>) -> Tensor {
@@ -59,6 +75,9 @@ impl Tensor {
     pub fn is_scalar(&self) -> bool {
         self.dimensions.is_empty()
     }
+    pub fn is_vector(&self) -> bool {
+        self.dimensions.len() == 1
+    }
 
     pub fn is_zero(&self) -> bool {
         self.is_scalar() && self.buf.read().unwrap()[0] == 0.0
@@ -86,6 +105,33 @@ impl Tensor {
         let mut result = self.clone();
         result.id = new_tensor_id();
         result
+    }
+
+    /// This is largely for testing: It checks if two tensors have the same geometry and 'pretty
+    ///  much' the same elements, i.e. the same elements within typical rounding errors. The margin
+    ///  for rounding errors is pretty lax - this is meant for verifying program logic, not
+    ///  numerical accuracy
+    #[must_use]
+    pub fn is_pretty_much_equal_to(&self, other: &Tensor) -> bool {
+        const THRESHOLD: f64 = 1e-5;
+
+        if self.dimensions() != other.dimensions() {
+            return false;
+        }
+        let buf_a = self.buf().read().unwrap();
+        let buf_b = other.buf().read().unwrap();
+        for i in 0..buf_a.len() {
+            if (buf_a[i] - buf_b[i]).abs() > THRESHOLD {
+                return false;
+            }
+        }
+        true
+    }
+
+    pub fn assert_pretty_much_equal_to(&self, other: &Tensor) {
+        if !self.is_pretty_much_equal_to(other) {
+            panic!("{:?} != {:?}", self, other);
+        }
     }
 }
 

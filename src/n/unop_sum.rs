@@ -9,7 +9,7 @@ impl UnaryTensorOp for UnOpSum {
         sum_raw(tensor, false)
     }
 
-    fn grad(&self, t: &Tensor, t_grad: &Option<Tensor>) -> Option<Tensor> {
+    fn grad(&self, _t: &Tensor, t_grad: &Option<Tensor>) -> Option<Tensor> {
         t_grad.as_ref()
             .map(|grad| sum_raw(grad, false))
     }
