@@ -1,24 +1,42 @@
 use std::cmp::Ordering;
-use crate::n::tensor::Tensor;
+use crate::n::tensor::{Dimension, Tensor};
 
 pub enum FitDimensionsResult {
     Equal,
     Mismatch,
-    LeftContainsRight { chunk_size: usize },
-    RightContainsLeft { chunk_size: usize },
+    LeftContainsRight { num_wrapper_dims: usize, num_nested_dims: usize, },
+    RightContainsLeft { num_wrapper_dims: usize, num_nested_dims: usize, },
 }
 
 /// Compares two tensors' dimensions, checking if one of the tensors contains parts with the
 ///  other's dimensions
-pub fn fit_dimensions(lhs_dim: &[usize], rhs_dim: &[usize]) -> FitDimensionsResult {
+pub fn fit_dimensions(lhs_dim: &[Dimension], rhs_dim: &[Dimension]) -> FitDimensionsResult {
+    //TODO ambiguity?
+    //TODO for nested_dims in 0..lhs.len() - rhs.len()
+
     match lhs_dim.len().cmp(&rhs_dim.len()) {
         Ordering::Equal =>
             if lhs_dim == rhs_dim { FitDimensionsResult::Equal } else { FitDimensionsResult::Mismatch }
         Ordering::Less =>
-            if rhs_dim.ends_with(lhs_dim) { FitDimensionsResult::RightContainsLeft { chunk_size: lhs_dim.iter().product() }} else { FitDimensionsResult::Mismatch }
+            check_dims_contained(rhs_dim, lhs_dim,
+                                 |num_wrapper_dims, num_nested_dims| FitDimensionsResult::RightContainsLeft { num_wrapper_dims, num_nested_dims, }),
         Ordering::Greater =>
-            if lhs_dim.ends_with(rhs_dim) { FitDimensionsResult::LeftContainsRight { chunk_size: rhs_dim.iter().product() }} else { FitDimensionsResult::Mismatch }
+            check_dims_contained(lhs_dim, rhs_dim,
+                                 |num_wrapper_dims, num_nested_dims| FitDimensionsResult::LeftContainsRight { num_wrapper_dims, num_nested_dims, }),
     }
+}
+
+fn check_dims_contained(
+    longer: &[Dimension],
+    shorter: &[Dimension],
+    factory: impl FnOnce(usize, usize) -> FitDimensionsResult,
+) -> FitDimensionsResult {
+    for num_nested_dims in 1..= longer.len() - shorter.len() {
+        if longer[..longer.len()- num_nested_dims].ends_with(shorter) {
+            return factory(longer.len() - shorter.len() - num_nested_dims, num_nested_dims);
+        }
+    }
+    FitDimensionsResult::Mismatch
 }
 
 pub fn chunk_wise_bin_op(lhs: &Tensor, rhs: &Tensor, chunk_op: impl Fn(&[f64], &[f64], &mut Vec<f64>)) -> Tensor {
@@ -27,13 +45,14 @@ pub fn chunk_wise_bin_op(lhs: &Tensor, rhs: &Tensor, chunk_op: impl Fn(&[f64], &
     let mut result_buf: Vec<f64>;
     let result_dim: Vec<usize>;
     match fit_dimensions(lhs.dimensions(), rhs.dimensions()) {
-        FitDimensionsResult::Mismatch => todo!("dimension mismatch"),
+        FitDimensionsResult::Mismatch =>
+            todo!("dimension mismatch"),
         FitDimensionsResult::Equal => {
             result_buf = Vec::with_capacity(lhs_buf.len());
             result_dim = lhs.dimensions().into();
             chunk_op(&lhs_buf, &rhs_buf, &mut result_buf);
         }
-        FitDimensionsResult::LeftContainsRight { chunk_size } => {
+        FitDimensionsResult::LeftContainsRight { num_wrapper_dims, num_nested_dims } => {
             result_buf = Vec::with_capacity(lhs_buf.len());
             result_dim = lhs.dimensions().into();
             for lhs_chunk in lhs_buf.chunks(chunk_size) {

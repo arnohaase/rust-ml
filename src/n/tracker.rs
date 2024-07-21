@@ -179,7 +179,7 @@ mod test {
     use crate::n::binop_plus::BinOpPlus;
     use crate::n::binop_polynomial::BinOpPolynomial;
 
-    use crate::n::tensor::Tensor;
+    use crate::n::tensor::{DimensionKind, Tensor};
     use crate::n::tracker::{ExecutionTracker, RegularExecutionTracker, TrackerExpression};
     use crate::n::unop_avg::UnOpAvg;
 
@@ -199,7 +199,7 @@ mod test {
             c.buf().read().unwrap()[0],
             b.buf().read().unwrap()[0],
             a.buf().read().unwrap()[0],
-        ]);
+        ], DimensionKind::Polynomial);
 
         let mut xs = Vec::new();
         let mut y_ref = Vec::new();
@@ -208,8 +208,8 @@ mod test {
             xs.push(x);
             y_ref.push(x.sin());
         }
-        let xs = Tensor::vector(xs);
-        let y_ref = Tensor::vector(y_ref);
+        let xs = Tensor::vector(xs, DimensionKind::Collection);
+        let y_ref = Tensor::vector(y_ref, DimensionKind::Collection);
 
         for n in 0..10 {
             let tracker = RegularExecutionTracker::new();
@@ -276,7 +276,7 @@ mod test {
             rand::thread_rng().gen_range(-1.0..1.0),
             rand::thread_rng().gen_range(-1.0..1.0),
             rand::thread_rng().gen_range(-1.0..1.0),
-        ]);
+        ], DimensionKind::Polynomial);
 
         let mut xs = Vec::new();
         let mut y_ref = Vec::new();
@@ -285,8 +285,8 @@ mod test {
             xs.push(x);
             y_ref.push(x.sin());
         }
-        let xs = Tensor::vector(xs);
-        let y_ref = Tensor::vector(y_ref);
+        let xs = Tensor::vector(xs, DimensionKind::Collection);
+        let y_ref = Tensor::vector(y_ref, DimensionKind::Collection);
 
         for n in 0..10000 {
             let tracker = RegularExecutionTracker::new();

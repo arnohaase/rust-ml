@@ -5,6 +5,23 @@ use std::sync::RwLock;
 use lazy_static::lazy_static;
 use triomphe::Arc;
 
+
+#[derive(Clone, Eq, PartialEq, Debug, Copy)]
+pub enum DimensionKind {
+    Regular,
+    Collection,
+    Gradient,
+    Polynomial,
+    //TODO RGB etc.
+}
+
+#[derive(Clone, Eq, PartialEq, Debug, Copy)]
+pub struct Dimension {
+    pub len: usize,
+    pub kind: DimensionKind,
+}
+
+
 lazy_static! {
     static ref TENSOR_ID_COUNTER: AtomicU32 = AtomicU32::new(0);
 }
@@ -17,7 +34,7 @@ pub struct Tensor {
     id: u32,
     version: Arc<AtomicU32>,
     //TODO do we need stride information for autograd stuff? if so, where to put it?
-    dimensions: Vec<usize>,
+    dimensions: Vec<Dimension>,
     buf: Arc<RwLock<Vec<f64>>>,
 }
 impl Debug for Tensor {
@@ -30,14 +47,14 @@ impl Debug for Tensor {
     }
 }
 
-fn write_rec(f: &mut Formatter<'_>, buf: &[f64], dimensions: &[usize]) -> std::fmt::Result {
+fn write_rec(f: &mut Formatter<'_>, buf: &[f64], dimensions: &[Dimension]) -> std::fmt::Result {
     if dimensions.len() == 1 {
         write!(f, "{:?}", buf)
     }
     else {
         write!(f, "[")?;
         let inner_dims = &dimensions[1..];
-        let chunk_size: usize = inner_dims.iter().product();
+        let chunk_size: usize = inner_dims.iter().map(|d| d.len).product();
         for chunk in buf.chunks(chunk_size) {
             write_rec(f, chunk, inner_dims)?;
         }
@@ -47,7 +64,7 @@ fn write_rec(f: &mut Formatter<'_>, buf: &[f64], dimensions: &[usize]) -> std::f
 
 
 impl Tensor {
-    pub fn from_raw(dimensions: Vec<usize>, buf: Vec<f64>) -> Tensor {
+    pub fn from_raw(dimensions: Vec<Dimension>, buf: Vec<f64>) -> Tensor {
         Tensor {
             id: new_tensor_id(),
             version: Default::default(),
@@ -60,8 +77,11 @@ impl Tensor {
         Self::from_raw(vec![], vec![x])
     }
 
-    pub fn vector(xs: Vec<f64>) -> Tensor {
-        Self::from_raw(vec![xs.len()], xs)
+    pub fn vector(xs: Vec<f64>, kind: DimensionKind) -> Tensor {
+        Self::from_raw(vec![Dimension {
+            len: xs.len(),
+            kind,
+        }], xs)
     }
 
     pub fn zero() -> Tensor {
@@ -93,7 +113,7 @@ impl Tensor {
     pub fn version(&self) -> u32 {
         self.version.fetch_add(0, Ordering::Acquire)
     }
-    pub fn dimensions(&self) -> &[usize] {
+    pub fn dimensions(&self) -> &[Dimension] {
         &self.dimensions
     }
 
