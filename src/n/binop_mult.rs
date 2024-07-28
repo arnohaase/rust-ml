@@ -30,7 +30,7 @@ impl BinOpMult {
             return Self::raw_mult_scalar(rhs, lhs);
         }
 
-        chunk_wise_bin_op(lhs, rhs, Self::raw_mult_chunk)
+        chunk_wise_bin_op(lhs, rhs, true, Self::raw_mult_chunk)
     }
 
     fn raw_mult_scalar(scalar: &Tensor, regular: &Tensor) -> Tensor {
@@ -61,29 +61,13 @@ impl BinaryTensorOp for BinOpMult {
     fn grad(&self, lhs: &Tensor, lhs_grad: &Option<Tensor>, rhs: &Tensor, rhs_grad: &Option<Tensor>) -> Option<Tensor> {
         match (lhs_grad, rhs_grad) {
             (None, None) => None,
-            (Some(lhs_grad), None) => {
-                println!("        L");
-                Some(Self::raw_mult(lhs_grad, rhs))
-            },
-            (None, Some(rhs_grad)) => {
-                let result = Some(Self::raw_mult(lhs, rhs_grad));
-
-                println!("        {:?} * {:?} = {:?}", lhs, rhs_grad, result);
-
-                result
-            },
+            (Some(lhs_grad), None) => Some(Self::raw_mult(lhs_grad, rhs)),
+            (None, Some(rhs_grad)) => Some(Self::raw_mult(lhs, rhs_grad)),
             (Some(lhs_grad), Some(rhs_grad)) => {
                 let a = Self::raw_mult(lhs_grad, rhs);
                 let b = Self::raw_mult(lhs, rhs_grad);
 
-                let result = Some(BinOpPlus::raw_plus(&a, &b));
-
-                println!("        B");
-                println!("            {:?} * {:?} = {:?}", lhs_grad, rhs, a);
-                println!("            {:?} * {:?} = {:?}", lhs, rhs_grad, b);
-                println!("            {:?} + {:?} = {:?}", a, b, result);
-
-                result
+                Some(BinOpPlus::raw_plus(&a, &b))
             },
         }
     }

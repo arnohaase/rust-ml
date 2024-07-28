@@ -42,29 +42,49 @@ fn check_dims_contained(
 pub fn chunk_wise_bin_op(
     lhs: &Tensor,
     rhs: &Tensor,
+    is_commutative: bool,
     chunk_op: impl Fn(usize, &[f64], usize, &mut [f64], usize),
 ) -> Tensor {
     let lhs_buf = lhs.buf().read().unwrap();
     let rhs_buf = rhs.buf().read().unwrap();
+
+    let lhs_dim = lhs.dimensions();
+    let rhs_dim = rhs.dimensions();
+
+    if is_commutative && rhs_dim.len() > lhs_dim.len() {
+        // implementations (especially BLAS based) tend to be optimized for LHS > RHS
+        _chunk_wise_bin_op(&rhs_buf, &lhs_buf, rhs_dim, lhs_dim, chunk_op)
+    }
+    else {
+        _chunk_wise_bin_op(&lhs_buf, &rhs_buf, lhs_dim, rhs_dim, chunk_op)
+    }
+}
+
+fn _chunk_wise_bin_op(
+    lhs_buf: &[f64],
+    rhs_buf: &[f64],
+    lhs_dim: &[Dimension],
+    rhs_dim: &[Dimension],
+    chunk_op: impl Fn(usize, &[f64], usize, &mut [f64], usize),
+) -> Tensor {
     let mut result_buf: Vec<f64>;
     let result_dim: Vec<Dimension>;
-    match fit_dimensions(lhs.dimensions(), rhs.dimensions()) {
+    match fit_dimensions(lhs_dim, rhs_dim) {
         FitDimensionsResult::Mismatch =>
             todo!("dimension mismatch"),
         FitDimensionsResult::Equal => {
             result_buf = Vec::with_capacity(lhs_buf.len());
             result_buf.extend_from_slice(&lhs_buf);
-            result_dim = lhs.dimensions().to_vec();
+            result_dim = lhs_dim.to_vec();
             chunk_op(rhs_buf.len(), &rhs_buf, 1, &mut result_buf, 1);
         }
         FitDimensionsResult::LeftContainsRight { num_wrapper_dims, num_nested_dims } => {
-            println!("l > r");
             result_buf = Vec::with_capacity(lhs_buf.len());
-            result_dim = lhs.dimensions().to_vec();
+            result_dim = lhs_dim.to_vec();
 
             //TODO extract to 'Dimensions' type
-            let chunk_size = lhs.dimensions()[num_wrapper_dims..].iter().map(|d| d.len).product(); // empty --> 1
-            let num_interleaved: usize = lhs.dimensions()[lhs.dimensions().len() - num_nested_dims..].iter().map(|d| d.len).product();
+            let chunk_size = lhs_dim[num_wrapper_dims..].iter().map(|d| d.len).product(); // empty --> 1
+            let num_interleaved: usize = lhs_dim[lhs_dim.len() - num_nested_dims..].iter().map(|d| d.len).product();
             for lhs_chunk in lhs_buf.chunks(chunk_size) {
                 let chunk_offs = result_buf.len();
                 result_buf.extend_from_slice(lhs_chunk);
@@ -76,14 +96,14 @@ pub fn chunk_wise_bin_op(
         }
         FitDimensionsResult::RightContainsLeft { num_wrapper_dims, num_nested_dims } => {
             result_buf = Vec::with_capacity(rhs_buf.len());
-            result_dim = rhs.dimensions().into();
+            result_dim = rhs_dim.into();
 
-            let nested_size: usize = rhs.dimensions()[num_wrapper_dims + lhs.dimensions().len()..] //TODO extract to 'Dimensions' type
+            let nested_size: usize = rhs_dim[num_wrapper_dims + lhs_dim.len()..] //TODO extract to 'Dimensions' type
                 .iter()
                 .map(|d| d.len)
                 .product();
 
-            let chunk_size = rhs.dimensions()[num_wrapper_dims..].iter().map(|d| d.len).product(); // empty --> 1
+            let chunk_size = rhs_dim[num_wrapper_dims..].iter().map(|d| d.len).product(); // empty --> 1
             for rhs_chunk in rhs_buf.chunks(chunk_size) {
                 let chunk_offs = result_buf.len();
                 for lhs_el in lhs_buf.iter() {
@@ -96,7 +116,6 @@ pub fn chunk_wise_bin_op(
             }
         }
     }
-    println!("result_dim: {:?}, result_buf: {:?}", result_dim, result_buf);
     Tensor::from_raw(result_dim, result_buf)
 }
 

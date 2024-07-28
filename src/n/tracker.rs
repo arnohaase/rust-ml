@@ -210,16 +210,9 @@ mod test {
         let mut c = Tensor::scalar(rand::thread_rng().gen_range(-1.0..1.0));
         let mut d = Tensor::scalar(rand::thread_rng().gen_range(-1.0..1.0));
 
-        let mut poly_def = Tensor::vector(vec![
-            d.buf().read().unwrap()[0],
-            c.buf().read().unwrap()[0],
-            b.buf().read().unwrap()[0],
-            a.buf().read().unwrap()[0],
-        ], DimensionKind::Polynomial);
-
         let mut xs = Vec::new();
         let mut y_ref = Vec::new();
-        for _ in 0..2 {
+        for _ in 0..200000 {
             let x: f64 = rand::thread_rng().gen_range(-1.6..1.6);
             xs.push(x);
             y_ref.push(x.sin());
@@ -227,7 +220,7 @@ mod test {
         let xs = Tensor::vector(xs, DimensionKind::Collection);
         let y_ref = Tensor::vector(y_ref, DimensionKind::Collection);
 
-        for n in 0..10 {
+        for n in 0..10_000 {
             let tracker = RegularExecutionTracker::new();
 
             let t3 = tracker.calc(TrackerExpression::Binary(xs.clone(), xs.clone(), Box::new(BinOpMult {})));
@@ -242,12 +235,9 @@ mod test {
             let poly = tracker.calc(TrackerExpression::Binary(t3, t2, Box::new(BinOpPlus {})));
             let poly = tracker.calc(TrackerExpression::Binary(poly, t1, Box::new(BinOpPlus {})));
             let poly = tracker.calc(TrackerExpression::Binary(poly, d.clone(), Box::new(BinOpPlus {})));
-            println!("    {:?}", tracker.grad(&poly, &a));
 
             let dy = tracker.calc(TrackerExpression::Binary(poly, y_ref.clone(), Box::new(BinOpMinus {})));
-            println!("    {:?}", tracker.grad(&dy, &a));
             let dy = tracker.calc(TrackerExpression::Binary(dy.clone(), dy, Box::new(BinOpMult {})));
-            println!("    {:?}", tracker.grad(&dy, &a));
 
             let err = tracker.calc(TrackerExpression::Unary(dy, Box::new(UnOpAvg {})));
 
@@ -261,27 +251,9 @@ mod test {
             BinOpPlus::plus_in_place(&mut c, &grad_c, -EPS);
             BinOpPlus::plus_in_place(&mut d, &grad_d, -EPS);
 
-            println!("{n}: {:?} : {:?} {:?} {:?} {:?}       {:?}*x^3 + {:?}*x^2 + {:?}*x + {:?}", err, grad_d, grad_c, grad_b, grad_a, d, c, b, a);
-
-            let tracker = RegularExecutionTracker::new();
-
-            let poly = tracker.calc(TrackerExpression::Binary(poly_def.clone(), xs.clone(), Box::new(BinOpPolynomial{})));
-
-            println!("    {:?}", tracker.grad(&poly, &poly_def));
-
-            let dy = tracker.calc(TrackerExpression::Binary(poly, y_ref.clone(), Box::new(BinOpMinus {})));
-            println!("    {:?}", tracker.grad(&dy, &poly_def));
-            let dy = tracker.calc(TrackerExpression::Binary(dy.clone(), dy, Box::new(BinOpMult {})));
-            println!("    {:?}", tracker.grad(&dy, &poly_def));
-
-            let err2 = tracker.calc(TrackerExpression::Unary(dy, Box::new(UnOpAvg {})));
-
-            let grad = tracker.grad(&err2, &poly_def).unwrap();
-            BinOpPlus::plus_in_place(&mut poly_def, &grad, -EPS);
-
-            println!("{n}: {:?} : {:?}    {:?}", err2, grad, poly_def);
-
-            println!("-----------------");
+            if n%100 == 0 {
+                println!("{n}: {:?}", err);
+            }
 
             if err.buf().read().unwrap()[0] < 1e-5 {
                 break;
@@ -304,7 +276,7 @@ mod test {
 
         let mut xs = Vec::new();
         let mut y_ref = Vec::new();
-        for _ in 0..2000 {
+        for _ in 0..200000 {
             let x: f64 = rand::thread_rng().gen_range(-1.6..1.6);
             xs.push(x);
             y_ref.push(x.sin());
@@ -312,7 +284,7 @@ mod test {
         let xs = Tensor::vector(xs, DimensionKind::Collection);
         let y_ref = Tensor::vector(y_ref, DimensionKind::Collection);
 
-        for n in 0..10000 {
+        for n in 0..10_000 {
             let tracker = RegularExecutionTracker::new();
 
             let p = tracker.calc(TrackerExpression::Binary(poly.clone(), xs.clone(), Box::new(BinOpPolynomial{})));
@@ -326,10 +298,10 @@ mod test {
             BinOpPlus::plus_in_place(&mut poly, &grad, -EPS);
 
             if n%100 == 0 {
-                println!("{n}: {:?} - {:?}   {:?}", err, grad, poly);
-                if err.buf().read().unwrap()[0] < 1e-5 {
-                    break;
-                }
+                println!("{n}: {:?}", err);
+            }
+            if err.buf().read().unwrap()[0] < 1e-5 {
+                break;
             }
         }
     }

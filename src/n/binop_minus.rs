@@ -28,7 +28,7 @@ impl BinOpMinus {
             return Tensor::from_raw(lhs.dimensions().into(), result);
         }
 
-        chunk_wise_bin_op(lhs, rhs, Self::raw_minus_chunk)
+        chunk_wise_bin_op(lhs, rhs, false, Self::raw_minus_chunk)
     }
 
     fn raw_minus_chunk(n: usize, rhs: &[f64], inc_rhs: usize, lhs: &mut[f64], inc_lhs: usize) {

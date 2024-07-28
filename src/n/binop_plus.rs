@@ -59,7 +59,7 @@ impl BinOpPlus {
 
         //TODO special handling for Tensor::one?
 
-        chunk_wise_bin_op(lhs, rhs, Self::raw_plus_chunk)
+        chunk_wise_bin_op(lhs, rhs, true, Self::raw_plus_chunk)
     }
 
     fn raw_plus_chunk(n: usize, rhs: &[f64], inc_rhs: usize, lhs: &mut [f64], inc_lhs: usize) {
