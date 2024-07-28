@@ -1,5 +1,6 @@
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
+use std::fmt::{Debug, Formatter};
 use std::ops::Deref;
 use std::sync::RwLock;
 
@@ -7,11 +8,11 @@ use rustc_hash::FxHashMap;
 
 use crate::n::tensor::Tensor;
 
-pub trait UnaryTensorOp {
+pub trait UnaryTensorOp: Debug {
     fn calc(&self, tensor: &Tensor) -> Tensor;
     fn grad(&self, t: &Tensor, t_grad: &Option<Tensor>) -> Option<Tensor>;
 }
-pub trait BinaryTensorOp {
+pub trait BinaryTensorOp: Debug {
     fn calc(&self, lhs: &Tensor, rhs: &Tensor) -> Tensor;
     fn grad(&self, lhs: &Tensor, lhs_grad: &Option<Tensor>, rhs: &Tensor, rhs_grad: &Option<Tensor>) -> Option<Tensor>;
 }
@@ -19,6 +20,14 @@ pub trait BinaryTensorOp {
 pub enum TrackerExpression {
     Unary(Tensor, Box<dyn UnaryTensorOp>),
     Binary(Tensor, Tensor, Box<dyn BinaryTensorOp>),
+}
+impl Debug for TrackerExpression {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            TrackerExpression::Unary(_, op) => write!(f, "{:?}", op),
+            TrackerExpression::Binary(_, _, op) => write!(f, "{:?}", op),
+        }
+    }
 }
 impl TrackerExpression {
     pub fn calc(&self) -> Tensor {
@@ -95,21 +104,28 @@ impl GradientCalcWorker {
                     todo!()
                 }
 
+                // println!("  {:?} -> {:?}: {:?}",
+                //          self.work_list.iter().map(|i| i.id()).collect::<Vec<_>>(),
+                //          cur_id,
+                //          expr);
+
                 let cur_result = match expr {
                     TrackerExpression::Unary(t, op) => self.grad_unary(&cur, t, op.as_ref()),
                     TrackerExpression::Binary(t1, t2, op) => self.grad_binary(&cur, &t1, &t2, op.as_ref()),
                 };
 
                 if let Some(g) = cur_result {
-                    println!("  {:?}: {:?} -> {:?}",
-                        self.work_list.iter().map(|i| i.id()).collect::<Vec<_>>(),
-                        cur_id,
-                        g,
-                    );
-
+                    // println!("    {:?}: {:?} {:?} -> {:?}",
+                    //     self.work_list.iter().map(|i| i.id()).collect::<Vec<_>>(),
+                    //     cur_id,
+                    //     expr,
+                    //     g,
+                    // );
+                    //
                     g
                 }
                 else {
+                    // println!("    ...");
                     continue;
                 }
             }
@@ -226,9 +242,12 @@ mod test {
             let poly = tracker.calc(TrackerExpression::Binary(t3, t2, Box::new(BinOpPlus {})));
             let poly = tracker.calc(TrackerExpression::Binary(poly, t1, Box::new(BinOpPlus {})));
             let poly = tracker.calc(TrackerExpression::Binary(poly, d.clone(), Box::new(BinOpPlus {})));
+            println!("    {:?}", tracker.grad(&poly, &a));
 
             let dy = tracker.calc(TrackerExpression::Binary(poly, y_ref.clone(), Box::new(BinOpMinus {})));
+            println!("    {:?}", tracker.grad(&dy, &a));
             let dy = tracker.calc(TrackerExpression::Binary(dy.clone(), dy, Box::new(BinOpMult {})));
+            println!("    {:?}", tracker.grad(&dy, &a));
 
             let err = tracker.calc(TrackerExpression::Unary(dy, Box::new(UnOpAvg {})));
 
@@ -242,23 +261,28 @@ mod test {
             BinOpPlus::plus_in_place(&mut c, &grad_c, -EPS);
             BinOpPlus::plus_in_place(&mut d, &grad_d, -EPS);
 
-            println!("{n}: {:?} : {:?} {:?} {:?} {:?}       {:?}*x^3 + {:?}*x^2 + {:?}*x + {:?}", err, grad_a, grad_b, grad_c, grad_d, a, b, c, d);
-
-            println!("-----------------");
+            println!("{n}: {:?} : {:?} {:?} {:?} {:?}       {:?}*x^3 + {:?}*x^2 + {:?}*x + {:?}", err, grad_d, grad_c, grad_b, grad_a, d, c, b, a);
 
             let tracker = RegularExecutionTracker::new();
 
-            let p = tracker.calc(TrackerExpression::Binary(poly_def.clone(), xs.clone(), Box::new(BinOpPolynomial{})));
+            let poly = tracker.calc(TrackerExpression::Binary(poly_def.clone(), xs.clone(), Box::new(BinOpPolynomial{})));
 
-            let dy = tracker.calc(TrackerExpression::Binary(p, y_ref.clone(), Box::new(BinOpMinus {})));
+            println!("    {:?}", tracker.grad(&poly, &poly_def));
+
+            let dy = tracker.calc(TrackerExpression::Binary(poly, y_ref.clone(), Box::new(BinOpMinus {})));
+            println!("    {:?}", tracker.grad(&dy, &poly_def));
             let dy = tracker.calc(TrackerExpression::Binary(dy.clone(), dy, Box::new(BinOpMult {})));
+            println!("    {:?}", tracker.grad(&dy, &poly_def));
 
             let err2 = tracker.calc(TrackerExpression::Unary(dy, Box::new(UnOpAvg {})));
 
             let grad = tracker.grad(&err2, &poly_def).unwrap();
             BinOpPlus::plus_in_place(&mut poly_def, &grad, -EPS);
 
-            println!(" b {:?} : {:?}    {:?}", err2, grad, poly_def);
+            println!("{n}: {:?} : {:?}    {:?}", err2, grad, poly_def);
+
+            println!("-----------------");
+
             if err.buf().read().unwrap()[0] < 1e-5 {
                 break;
             }

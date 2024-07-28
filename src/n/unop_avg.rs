@@ -2,6 +2,7 @@ use crate::n::tensor::Tensor;
 use crate::n::tracker::UnaryTensorOp;
 use crate::n::unop_sum::sum_raw;
 
+#[derive(Debug)]
 pub struct UnOpAvg {}
 impl UnaryTensorOp for UnOpAvg {
     fn calc(&self, tensor: &Tensor) -> Tensor {

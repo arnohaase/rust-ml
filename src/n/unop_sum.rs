@@ -3,6 +3,7 @@ use blas::{daxpy, dscal};
 use crate::n::tensor::Tensor;
 use crate::n::tracker::UnaryTensorOp;
 
+#[derive(Debug)]
 pub struct UnOpSum {}
 impl UnaryTensorOp for UnOpSum {
     fn calc(&self, tensor: &Tensor) -> Tensor {
@@ -17,6 +18,7 @@ impl UnaryTensorOp for UnOpSum {
 
 pub fn sum_raw(tensor: &Tensor, divide_by_len: bool) -> Tensor {
     let dim = tensor.dimensions();
+    //TODO verify that the outermost dimension has kind 'collection'? Generalize to sum on a selectable dimension? With assertable kind?
     let buf = &tensor.buf().read().unwrap();
     match dim.len() {
         0 => panic!("called sum() on a scalar"),
@@ -30,7 +32,7 @@ pub fn sum_raw(tensor: &Tensor, divide_by_len: bool) -> Tensor {
         }
         _ => {
             let result_dim = dim[1..].to_vec();
-            let chunk_size = result_dim.iter().product();
+            let chunk_size = result_dim.iter().map(|d| d.len).product();
             let mut result_buf = buf[0..chunk_size].to_vec();
 
             for chunk in buf[chunk_size..].chunks(chunk_size) {
@@ -40,7 +42,7 @@ pub fn sum_raw(tensor: &Tensor, divide_by_len: bool) -> Tensor {
             }
             if divide_by_len {
                 unsafe {
-                    dscal(chunk_size as i32, 1.0 / dim[0] as f64, &mut result_buf, 1);
+                    dscal(chunk_size as i32, 1.0 / dim[0].len as f64, &mut result_buf, 1);
                 }
             }
 

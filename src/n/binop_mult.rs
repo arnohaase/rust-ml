@@ -5,6 +5,7 @@ use crate::n::calc_utils::chunk_wise_bin_op;
 use crate::n::tensor::Tensor;
 use crate::n::tracker::BinaryTensorOp;
 
+#[derive(Debug)]
 pub struct BinOpMult {}
 impl BinOpMult {
     pub fn new() -> BinOpMult {
@@ -41,9 +42,14 @@ impl BinOpMult {
         return Tensor::from_raw(regular.dimensions().into(), result);
     }
 
-    fn raw_mult_chunk(lhs: &[f64], rhs: &[f64], result: &mut Vec<f64>) {
-        for i in 0..lhs.len() {
-            result.push(lhs[i] * rhs[i]);
+    fn raw_mult_chunk(n: usize, rhs: &[f64], inc_rhs: usize, lhs: &mut[f64], inc_lhs: usize) {
+        let mut offs_lhs = 0;
+        let mut offs_rhs = 0;
+
+        for _ in 0..n {
+            lhs[offs_lhs] *= rhs[offs_rhs];
+            offs_lhs += inc_lhs;
+            offs_rhs += inc_rhs;
         }
     }
 }
@@ -55,14 +61,53 @@ impl BinaryTensorOp for BinOpMult {
     fn grad(&self, lhs: &Tensor, lhs_grad: &Option<Tensor>, rhs: &Tensor, rhs_grad: &Option<Tensor>) -> Option<Tensor> {
         match (lhs_grad, rhs_grad) {
             (None, None) => None,
-            (Some(lhs_grad), None) => Some(Self::raw_mult(lhs_grad, rhs)),
-            (None, Some(rhs_grad)) => Some(Self::raw_mult(lhs, rhs_grad)),
+            (Some(lhs_grad), None) => {
+                println!("        L");
+                Some(Self::raw_mult(lhs_grad, rhs))
+            },
+            (None, Some(rhs_grad)) => {
+                let result = Some(Self::raw_mult(lhs, rhs_grad));
+
+                println!("        {:?} * {:?} = {:?}", lhs, rhs_grad, result);
+
+                result
+            },
             (Some(lhs_grad), Some(rhs_grad)) => {
-                Some(BinOpPlus::raw_plus(
-                    &Self::raw_mult(lhs_grad, rhs),
-                    &Self::raw_mult(lhs, rhs_grad),
-                ))
+                let a = Self::raw_mult(lhs_grad, rhs);
+                let b = Self::raw_mult(lhs, rhs_grad);
+
+                let result = Some(BinOpPlus::raw_plus(&a, &b));
+
+                println!("        B");
+                println!("            {:?} * {:?} = {:?}", lhs_grad, rhs, a);
+                println!("            {:?} * {:?} = {:?}", lhs, rhs_grad, b);
+                println!("            {:?} + {:?} = {:?}", a, b, result);
+
+                result
             },
         }
     }
 }
+
+#[cfg(test)]
+mod test {
+    use rstest::rstest;
+    use crate::n::binop_mult::BinOpMult;
+    use crate::n::tensor::{Dimension, DimensionKind, Tensor};
+
+    #[rstest]
+    #[case(Tensor::vector(vec![1.0, 2.0, 3.0], DimensionKind::Collection),
+        Tensor::from_raw(
+            vec![Dimension { len: 3, kind: DimensionKind::Collection}, Dimension { len: 2, kind: DimensionKind::Polynomial},],
+            vec![ 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]),
+        Tensor::from_raw(
+            vec![Dimension { len: 3, kind: DimensionKind::Collection}, Dimension { len: 2, kind: DimensionKind::Polynomial},],
+            vec![ 3.0, 4.0, 10.0, 12.0, 21.0, 24.0]),
+    )]
+    fn test_calc(#[case] lhs: Tensor, #[case] rhs: Tensor, #[case] expected: Tensor) {
+        println!("{:?} * {:?} ?= {:?}", lhs, rhs, expected);
+        BinOpMult::raw_mult(&lhs, &rhs).assert_pretty_much_equal_to(&expected);
+        BinOpMult::raw_mult(&rhs, &lhs).assert_pretty_much_equal_to(&expected);
+    }
+}
+

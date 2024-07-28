@@ -9,6 +9,7 @@ pub fn raw_minus(lhs: &Tensor, rhs: &Tensor) -> Tensor {
 }
 
 
+#[derive(Debug)]
 pub struct BinOpMinus {}
 impl BinOpMinus {
     pub fn new() -> BinOpMinus {
@@ -30,11 +31,9 @@ impl BinOpMinus {
         chunk_wise_bin_op(lhs, rhs, Self::raw_minus_chunk)
     }
 
-    fn raw_minus_chunk(lhs: &[f64], rhs: &[f64], result: &mut Vec<f64>) {
-        let offs = result.len();
-        result.extend_from_slice(lhs);
+    fn raw_minus_chunk(n: usize, rhs: &[f64], inc_rhs: usize, lhs: &mut[f64], inc_lhs: usize) {
         unsafe {
-            daxpy(lhs.len() as i32, -1.0, rhs, 1, &mut result[offs..], 1);
+            daxpy(n as i32, -1.0, rhs, inc_rhs as i32, lhs, inc_lhs as i32);
         }
     }
 }

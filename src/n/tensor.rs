@@ -10,7 +10,6 @@ use triomphe::Arc;
 pub enum DimensionKind {
     Regular,
     Collection,
-    Gradient,
     Polynomial,
     //TODO RGB etc.
 }

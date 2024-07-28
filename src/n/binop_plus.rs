@@ -4,6 +4,7 @@ use crate::n::calc_utils::{chunk_wise_bin_op, fit_dimensions, FitDimensionsResul
 use crate::n::tensor::Tensor;
 use crate::n::tracker::BinaryTensorOp;
 
+#[derive(Debug)]
 pub struct BinOpPlus {}
 impl BinOpPlus {
     pub fn new() -> BinOpPlus {
@@ -23,20 +24,25 @@ impl BinOpPlus {
                 unsafe {
                     daxpy(lhs_buf.len() as i32, factor, &rhs_buf, 1, &mut lhs_buf, 1);
                 }
-            FitDimensionsResult::LeftContainsRight { chunk_size } => {
+            FitDimensionsResult::LeftContainsRight { num_wrapper_dims, num_nested_dims } => {
+                //TODO extract to 'Dimensions' data type
+                let chunk_size = lhs.dimensions()[num_wrapper_dims..].iter().map(|d| d.len).product(); // empty --> 1
+                let num_interleaved: usize = lhs.dimensions()[lhs.dimensions().len() - num_nested_dims..].iter().map(|d| d.len).product();
                 for lhs_chunk in lhs_buf.chunks_mut(chunk_size) {
-                    unsafe {
-                        daxpy(chunk_size as i32, factor, &rhs_buf, 1, lhs_chunk, 1);
+                    for offset in 0..num_interleaved {
+                        unsafe {
+                            daxpy(chunk_size as i32, factor, &rhs_buf, 1, &mut lhs_chunk[offset..], num_interleaved as i32);
+                        }
                     }
                 }
             }
-            FitDimensionsResult::RightContainsLeft { chunk_size } => {
+            FitDimensionsResult::RightContainsLeft { num_wrapper_dims, num_nested_dims } => {
                 todo!()
             }
         }
     }
 
-    fn raw_plus_chunk_ind_place(lhs: &mut [f64], rhs: &[f64]) {
+    fn raw_plus_chunk_in_place(lhs: &mut [f64], rhs: &[f64]) {
         unsafe {
             daxpy(lhs.len() as i32, -1.0, rhs, 1, lhs, 1);
         }
@@ -51,16 +57,14 @@ impl BinOpPlus {
             return lhs.clone_with_new_id();
         }
 
-        //TODO special handling for one?
+        //TODO special handling for Tensor::one?
 
         chunk_wise_bin_op(lhs, rhs, Self::raw_plus_chunk)
     }
 
-    fn raw_plus_chunk(lhs: &[f64], rhs: &[f64], result: &mut Vec<f64>) {
-        let offs = result.len();
-        result.extend_from_slice(lhs);
+    fn raw_plus_chunk(n: usize, rhs: &[f64], inc_rhs: usize, lhs: &mut [f64], inc_lhs: usize) {
         unsafe {
-            daxpy(lhs.len() as i32, 1.0, rhs, 1, &mut result[offs..], 1);
+            daxpy(n as i32, 1.0, rhs, inc_rhs as i32, lhs, inc_lhs as i32);
         }
     }
 }
