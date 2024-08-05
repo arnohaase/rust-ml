@@ -1,7 +1,7 @@
 use blas::daxpy;
 
-use crate::calc_utils::{chunk_wise_bin_op, fit_dimensions, FitDimensionsResult};
-use crate::tensor::Tensor;
+use crate::operations::calc_utils::{chunk_wise_bin_op, fit_dimensions, FitDimensionsResult};
+use crate::tensor::{BlasEnv, Tensor, TensorEnv};
 use crate::tracker::BinaryTensorOp;
 
 #[derive(Debug)]
@@ -11,7 +11,7 @@ impl BinOpPlus {
         BinOpPlus{}
     }
 
-    pub fn plus_in_place(lhs: &mut Tensor, rhs: &Tensor, factor: f64) {
+    pub fn plus_in_place<'env>(lhs: &mut Tensor<'env, BlasEnv>, rhs: &Tensor<'env, BlasEnv>, factor: f64) {
         // if rhs.is_zero() {
         //     return;
         // }
@@ -49,7 +49,7 @@ impl BinOpPlus {
     }
 
 
-    pub fn raw_plus(lhs: &Tensor, rhs: &Tensor) -> Tensor {
+    pub fn raw_plus<'env>(lhs: &Tensor<'env, BlasEnv>, rhs: &Tensor<'env, BlasEnv>) -> Tensor<'env, BlasEnv> {
         // if lhs.is_zero() {
         //     return rhs.clone_with_new_id();
         // }
@@ -68,12 +68,12 @@ impl BinOpPlus {
         }
     }
 }
-impl BinaryTensorOp for BinOpPlus {
-    fn calc(&self, lhs: &Tensor, rhs: &Tensor) -> Tensor {
+impl BinaryTensorOp<BlasEnv> for BinOpPlus {
+    fn calc<'env>(&self, lhs: &Tensor<'env, BlasEnv>, rhs: &Tensor<'env, BlasEnv>) -> Tensor<'env, BlasEnv> {
         Self::raw_plus(lhs, rhs)
     }
 
-    fn grad(&self, _lhs: &Tensor, lhs_grad: &Option<Tensor>, _rhs: &Tensor, rhs_grad: &Option<Tensor>) -> Option<Tensor> {
+    fn grad<'env>(&self, _lhs: &Tensor<'env, BlasEnv>, lhs_grad: &Option<Tensor<'env, BlasEnv>>, _rhs: &Tensor<'env, BlasEnv>, rhs_grad: &Option<Tensor<'env, BlasEnv>>) -> Option<Tensor<'env, BlasEnv>> {
         match (lhs_grad, rhs_grad) {
             (None, None) => None,
             (Some(lhs_grad), None) => Some(lhs_grad.clone()),

@@ -1,5 +1,5 @@
 use std::cmp::Ordering;
-use crate::tensor::{Dimension, Tensor};
+use crate::tensor::{BlasEnv, Dimension, Tensor, TensorEnv};
 
 pub enum FitDimensionsResult {
     Equal,
@@ -39,12 +39,12 @@ fn check_dims_contained(
     FitDimensionsResult::Mismatch
 }
 
-pub fn chunk_wise_bin_op(
-    lhs: &Tensor,
-    rhs: &Tensor,
+pub fn chunk_wise_bin_op<'env>(
+    lhs: &Tensor<'env, BlasEnv>,
+    rhs: &Tensor<'env, BlasEnv>,
     is_commutative: bool,
     chunk_op: impl Fn(usize, &[f64], usize, &mut [f64], usize),
-) -> Tensor {
+) -> Tensor<'env, BlasEnv> {
     let lhs_buf = lhs.buf().read().unwrap();
     let rhs_buf = rhs.buf().read().unwrap();
 
@@ -53,20 +53,21 @@ pub fn chunk_wise_bin_op(
 
     if is_commutative && rhs_dim.len() > lhs_dim.len() {
         // implementations (especially BLAS based) tend to be optimized for LHS > RHS
-        _chunk_wise_bin_op(&rhs_buf, &lhs_buf, rhs_dim, lhs_dim, chunk_op)
+        _chunk_wise_bin_op(&rhs_buf, &lhs_buf, rhs_dim, lhs_dim, chunk_op, lhs.env())
     }
     else {
-        _chunk_wise_bin_op(&lhs_buf, &rhs_buf, lhs_dim, rhs_dim, chunk_op)
+        _chunk_wise_bin_op(&lhs_buf, &rhs_buf, lhs_dim, rhs_dim, chunk_op, lhs.env())
     }
 }
 
-fn _chunk_wise_bin_op(
+fn _chunk_wise_bin_op<'env>(
     lhs_buf: &[f64],
     rhs_buf: &[f64],
     lhs_dim: &[Dimension],
     rhs_dim: &[Dimension],
     chunk_op: impl Fn(usize, &[f64], usize, &mut [f64], usize),
-) -> Tensor {
+    env: &'env BlasEnv,
+) -> Tensor<'env, BlasEnv> {
     let mut result_buf: Vec<f64>;
     let result_dim: Vec<Dimension>;
     match fit_dimensions(lhs_dim, rhs_dim) {
@@ -116,7 +117,7 @@ fn _chunk_wise_bin_op(
             }
         }
     }
-    Tensor::from_raw(result_dim, result_buf)
+    env.create_tensor(result_dim, result_buf)
 }
 
 

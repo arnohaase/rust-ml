@@ -1,12 +1,11 @@
-use blas::{daxpy, dscal};
-use crate::binop_mult::BinOpMult;
+use blas::daxpy;
 
-use crate::calc_utils::chunk_wise_bin_op;
-use crate::tensor::Tensor;
+use crate::operations::calc_utils::chunk_wise_bin_op;
+use crate::operations::unop_minus::UnOpMinus;
+use crate::tensor::{BlasEnv, Tensor, TensorEnv};
 use crate::tracker::BinaryTensorOp;
-use crate::unop_minus::UnOpMinus;
 
-pub fn raw_minus(lhs: &Tensor, rhs: &Tensor) -> Tensor {
+pub fn raw_minus<'env>(lhs: &Tensor<'env, BlasEnv>, rhs: &Tensor<'env, BlasEnv>) -> Tensor<'env, BlasEnv> {
     BinOpMinus{}.calc(lhs, rhs)
 }
 
@@ -18,7 +17,7 @@ impl BinOpMinus {
         BinOpMinus{}
     }
 
-    pub fn raw_minus(lhs: &Tensor, rhs: &Tensor) -> Tensor {
+    pub fn raw_minus<'env>(lhs: &Tensor<'env, BlasEnv>, rhs: &Tensor<'env, BlasEnv>) -> Tensor<'env, BlasEnv> {
         // if rhs.is_zero() {
         //     return lhs.clone_with_new_id();
         // }
@@ -38,12 +37,12 @@ impl BinOpMinus {
         }
     }
 }
-impl BinaryTensorOp for BinOpMinus {
-    fn calc(&self, lhs: &Tensor, rhs: &Tensor) -> Tensor {
+impl BinaryTensorOp<BlasEnv> for BinOpMinus {
+    fn calc<'env>(&self, lhs: &Tensor<'env, BlasEnv>, rhs: &Tensor<'env, BlasEnv>) -> Tensor<'env, BlasEnv> {
         Self::raw_minus(lhs, rhs)
     }
 
-    fn grad(&self, _lhs: &Tensor, lhs_grad: &Option<Tensor>, _rhs: &Tensor, rhs_grad: &Option<Tensor>) -> Option<Tensor> {
+    fn grad<'env>(&self, _lhs: &Tensor<'env, BlasEnv>, lhs_grad: &Option<Tensor<'env, BlasEnv>>, _rhs: &Tensor<'env, BlasEnv>, rhs_grad: &Option<Tensor<'env, BlasEnv>>) -> Option<Tensor<'env, BlasEnv>> {
         match (lhs_grad, rhs_grad) {
             (None, None) => None,
             (Some(lhs_grad), None) => Some(lhs_grad.clone()),

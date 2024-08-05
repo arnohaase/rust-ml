@@ -1,22 +1,22 @@
 use blas::{daxpy, dscal};
 
-use crate::tensor::Tensor;
+use crate::tensor::{BlasEnv, Tensor, TensorEnv};
 use crate::tracker::UnaryTensorOp;
 
 #[derive(Debug)]
 pub struct UnOpSum {}
-impl UnaryTensorOp for UnOpSum {
-    fn calc(&self, tensor: &Tensor) -> Tensor {
+impl UnaryTensorOp<BlasEnv> for UnOpSum {
+    fn calc<'env>(&self, tensor: &Tensor<'env, BlasEnv>) -> Tensor<'env, BlasEnv> {
         sum_raw(tensor, false)
     }
 
-    fn grad(&self, _t: &Tensor, t_grad: &Option<Tensor>) -> Option<Tensor> {
+    fn grad<'env>(&self, _t: &Tensor<'env, BlasEnv>, t_grad: &Option<Tensor<'env, BlasEnv>>) -> Option<Tensor<'env, BlasEnv>> {
         t_grad.as_ref()
             .map(|grad| sum_raw(grad, false))
     }
 }
 
-pub fn sum_raw(tensor: &Tensor, divide_by_len: bool) -> Tensor {
+pub fn sum_raw<'env>(tensor: &Tensor<'env, BlasEnv>, divide_by_len: bool) -> Tensor<'env, BlasEnv> {
     let dim = tensor.dimensions();
     //TODO verify that the outermost dimension has kind 'collection'? Generalize to sum on a selectable dimension? With assertable kind?
     let buf = &tensor.buf().read().unwrap();
@@ -28,7 +28,7 @@ pub fn sum_raw(tensor: &Tensor, divide_by_len: bool) -> Tensor {
             if divide_by_len {
                 sum /= buf.len() as f64;
             }
-            Tensor::from_raw(vec![], vec![sum])
+            tensor.env().create_tensor(vec![], vec![sum])
         }
         _ => {
             let result_dim = dim[1..].to_vec();
@@ -46,7 +46,7 @@ pub fn sum_raw(tensor: &Tensor, divide_by_len: bool) -> Tensor {
                 }
             }
 
-            Tensor::from_raw(result_dim, result_buf)
+            tensor.env().create_tensor(result_dim, result_buf)
         }
     }
 }
