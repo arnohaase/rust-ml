@@ -1,10 +1,10 @@
 use blas::{daxpy, dscal};
-use crate::n::binop_mult::BinOpMult;
+use crate::binop_mult::BinOpMult;
 
-use crate::n::calc_utils::chunk_wise_bin_op;
-use crate::n::tensor::Tensor;
-use crate::n::tracker::BinaryTensorOp;
-use crate::n::unop_minus::UnOpMinus;
+use crate::calc_utils::chunk_wise_bin_op;
+use crate::tensor::Tensor;
+use crate::tracker::BinaryTensorOp;
+use crate::unop_minus::UnOpMinus;
 
 pub fn raw_minus(lhs: &Tensor, rhs: &Tensor) -> Tensor {
     BinOpMinus{}.calc(lhs, rhs)

@@ -1,6 +1,6 @@
 use blas::dscal;
-use crate::n::tensor::Tensor;
-use crate::n::tracker::UnaryTensorOp;
+use crate::tensor::Tensor;
+use crate::tracker::UnaryTensorOp;
 
 #[derive(Debug)]
 pub struct UnOpMinus {}

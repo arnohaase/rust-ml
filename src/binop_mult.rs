@@ -1,9 +1,9 @@
 use blas::dscal;
 
-use crate::n::binop_plus::BinOpPlus;
-use crate::n::calc_utils::chunk_wise_bin_op;
-use crate::n::tensor::Tensor;
-use crate::n::tracker::BinaryTensorOp;
+use crate::binop_plus::BinOpPlus;
+use crate::calc_utils::chunk_wise_bin_op;
+use crate::tensor::Tensor;
+use crate::tracker::BinaryTensorOp;
 
 #[derive(Debug)]
 pub struct BinOpMult {}
@@ -73,8 +73,8 @@ impl BinaryTensorOp for BinOpMult {
 #[cfg(test)]
 mod test {
     use rstest::rstest;
-    use crate::n::binop_mult::BinOpMult;
-    use crate::n::tensor::{Dimension, DimensionKind, Tensor};
+    use crate::binop_mult::BinOpMult;
+    use crate::tensor::{Dimension, DimensionKind, Tensor};
 
     #[rstest]
     #[case(Tensor::vector(vec![1.0, 2.0, 3.0], DimensionKind::Collection),

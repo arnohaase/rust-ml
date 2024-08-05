@@ -1,5 +1,5 @@
-use crate::n::tensor::Tensor;
-use crate::n::tracker::BinaryTensorOp;
+use crate::tensor::Tensor;
+use crate::tracker::BinaryTensorOp;
 
 /// treats the first argument (which must be a vector) as scalar coefficients in a polynomial,
 ///  applying that polynomial element-wise to the second argument.
@@ -68,11 +68,11 @@ impl BinaryTensorOp for BinOpPolynomial {
 #[cfg(test)]
 mod test {
     use rstest::rstest;
-    use crate::n::binop_mult::BinOpMult;
-    use crate::n::binop_plus::BinOpPlus;
-    use crate::n::binop_polynomial::BinOpPolynomial;
-    use crate::n::tensor::{DimensionKind, Tensor};
-    use crate::n::tracker::{BinaryTensorOp, ExecutionTracker, RegularExecutionTracker, TrackerExpression};
+    use crate::binop_mult::BinOpMult;
+    use crate::binop_plus::BinOpPlus;
+    use crate::binop_polynomial::BinOpPolynomial;
+    use crate::tensor::{DimensionKind, Tensor};
+    use crate::tracker::{BinaryTensorOp, ExecutionTracker, RegularExecutionTracker, TrackerExpression};
 
     #[rstest]
     #[case::constant(vec![5.0], 5.0)]

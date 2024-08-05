@@ -1,6 +1,6 @@
-use crate::n::tensor::Tensor;
-use crate::n::tracker::UnaryTensorOp;
-use crate::n::unop_sum::sum_raw;
+use crate::tensor::Tensor;
+use crate::tracker::UnaryTensorOp;
+use crate::unop_sum::sum_raw;
 
 #[derive(Debug)]
 pub struct UnOpAvg {}

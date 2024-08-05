@@ -1,5 +1,5 @@
 use std::cmp::Ordering;
-use crate::n::tensor::{Dimension, Tensor};
+use crate::tensor::{Dimension, Tensor};
 
 pub enum FitDimensionsResult {
     Equal,

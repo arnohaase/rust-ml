@@ -148,7 +148,7 @@ impl Tensor {
 
 #[cfg(test)]
 mod test {
-    use crate::n::tensor::Tensor;
+    use crate::tensor::Tensor;
 
 }
 

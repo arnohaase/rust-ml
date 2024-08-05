@@ -1,5 +1,7 @@
 data/mnist
 
+Cargo.lock
+
 target
 
 *.iml

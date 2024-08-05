@@ -6,7 +6,7 @@ use std::sync::RwLock;
 
 use rustc_hash::FxHashMap;
 
-use crate::n::tensor::Tensor;
+use crate::tensor::Tensor;
 
 pub trait UnaryTensorOp: Debug {
     fn calc(&self, tensor: &Tensor) -> Tensor;
@@ -191,14 +191,14 @@ impl GradientCalcWorker {
 #[cfg(test)]
 mod test {
     use rand::Rng;
-    use crate::n::binop_minus::BinOpMinus;
-    use crate::n::binop_mult::BinOpMult;
-    use crate::n::binop_plus::BinOpPlus;
-    use crate::n::binop_polynomial::BinOpPolynomial;
+    use crate::binop_minus::BinOpMinus;
+    use crate::binop_mult::BinOpMult;
+    use crate::binop_plus::BinOpPlus;
+    use crate::binop_polynomial::BinOpPolynomial;
 
-    use crate::n::tensor::{DimensionKind, Tensor};
-    use crate::n::tracker::{ExecutionTracker, RegularExecutionTracker, TrackerExpression};
-    use crate::n::unop_avg::UnOpAvg;
+    use crate::tensor::{DimensionKind, Tensor};
+    use crate::tracker::{ExecutionTracker, RegularExecutionTracker, TrackerExpression};
+    use crate::unop_avg::UnOpAvg;
 
     #[test]
     fn test_sin_poly_mult() {

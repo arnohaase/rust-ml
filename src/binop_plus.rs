@@ -1,8 +1,8 @@
 use blas::daxpy;
 
-use crate::n::calc_utils::{chunk_wise_bin_op, fit_dimensions, FitDimensionsResult};
-use crate::n::tensor::Tensor;
-use crate::n::tracker::BinaryTensorOp;
+use crate::calc_utils::{chunk_wise_bin_op, fit_dimensions, FitDimensionsResult};
+use crate::tensor::Tensor;
+use crate::tracker::BinaryTensorOp;
 
 #[derive(Debug)]
 pub struct BinOpPlus {}
