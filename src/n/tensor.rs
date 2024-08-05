@@ -83,14 +83,6 @@ impl Tensor {
         }], xs)
     }
 
-    pub fn zero() -> Tensor {
-        Self::from_raw(vec![], vec![0.0])
-    }
-
-    pub fn one() -> Tensor {
-        Self::from_raw(vec![], vec![1.0])
-    }
-
     pub fn is_scalar(&self) -> bool {
         self.dimensions.is_empty()
     }
@@ -158,9 +150,5 @@ impl Tensor {
 mod test {
     use crate::n::tensor::Tensor;
 
-    #[test]
-    fn test_one() {
-        assert!(Tensor::one().is_one());
-    }
 }
 

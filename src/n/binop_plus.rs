@@ -12,9 +12,9 @@ impl BinOpPlus {
     }
 
     pub fn plus_in_place(lhs: &mut Tensor, rhs: &Tensor, factor: f64) {
-        if rhs.is_zero() {
-            return;
-        }
+        // if rhs.is_zero() {
+        //     return;
+        // }
 
         let mut lhs_buf = lhs.buf().write().unwrap();
         let rhs_buf = rhs.buf().read().unwrap();
@@ -50,12 +50,12 @@ impl BinOpPlus {
 
 
     pub fn raw_plus(lhs: &Tensor, rhs: &Tensor) -> Tensor {
-        if lhs.is_zero() {
-            return rhs.clone_with_new_id();
-        }
-        if rhs.is_zero() {
-            return lhs.clone_with_new_id();
-        }
+        // if lhs.is_zero() {
+        //     return rhs.clone_with_new_id();
+        // }
+        // if rhs.is_zero() {
+        //     return lhs.clone_with_new_id();
+        // }
 
         //TODO special handling for Tensor::one?
 

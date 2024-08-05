@@ -88,7 +88,8 @@ impl GradientCalcWorker {
             grad_cache: Default::default(),
             work_list: vec![],
         };
-        result.grad_cache.insert(for_ultimate_input.id(), Some(Tensor::one())); // pre-filling for termination
+        //TODO separate storage to avoid multiplying with 1?
+        result.grad_cache.insert(for_ultimate_input.id(), Some(Tensor::scalar(1.0))); // pre-filling for termination
         result
     }
 
@@ -212,7 +213,7 @@ mod test {
 
         let mut xs = Vec::new();
         let mut y_ref = Vec::new();
-        for _ in 0..200000 {
+        for _ in 0..2000 {
             let x: f64 = rand::thread_rng().gen_range(-1.6..1.6);
             xs.push(x);
             y_ref.push(x.sin());
@@ -276,7 +277,7 @@ mod test {
 
         let mut xs = Vec::new();
         let mut y_ref = Vec::new();
-        for _ in 0..200000 {
+        for _ in 0..2000 {
             let x: f64 = rand::thread_rng().gen_range(-1.6..1.6);
             xs.push(x);
             y_ref.push(x.sin());

@@ -1,8 +1,10 @@
 use blas::{daxpy, dscal};
+use crate::n::binop_mult::BinOpMult;
 
 use crate::n::calc_utils::chunk_wise_bin_op;
 use crate::n::tensor::Tensor;
 use crate::n::tracker::BinaryTensorOp;
+use crate::n::unop_minus::UnOpMinus;
 
 pub fn raw_minus(lhs: &Tensor, rhs: &Tensor) -> Tensor {
     BinOpMinus{}.calc(lhs, rhs)
@@ -17,17 +19,16 @@ impl BinOpMinus {
     }
 
     pub fn raw_minus(lhs: &Tensor, rhs: &Tensor) -> Tensor {
-        if rhs.is_zero() {
-            return lhs.clone_with_new_id();
-        }
-        if lhs.is_zero() {
-            let mut result = rhs.buf().read().unwrap().clone();
-            unsafe {
-                dscal(result.len() as i32, -1.0, result.as_mut_slice(), 1);
-            }
-            return Tensor::from_raw(lhs.dimensions().into(), result);
-        }
-
+        // if rhs.is_zero() {
+        //     return lhs.clone_with_new_id();
+        // }
+        // if lhs.is_zero() {
+        //     let mut result = rhs.buf().read().unwrap().clone();
+        //     unsafe {
+        //         dscal(result.len() as i32, -1.0, result.as_mut_slice(), 1);
+        //     }
+        //     return Tensor::from_raw(lhs.dimensions().into(), result);
+        // }
         chunk_wise_bin_op(lhs, rhs, false, Self::raw_minus_chunk)
     }
 
@@ -46,7 +47,7 @@ impl BinaryTensorOp for BinOpMinus {
         match (lhs_grad, rhs_grad) {
             (None, None) => None,
             (Some(lhs_grad), None) => Some(lhs_grad.clone()),
-            (None, Some(rhs_grad)) => Some(raw_minus(&Tensor::zero(), rhs_grad)),
+            (None, Some(rhs_grad)) => Some(UnOpMinus::raw_minus(rhs_grad)),
             (Some(lhs_grad), Some(rhs_grad)) => Some(raw_minus(lhs_grad, rhs_grad)),
         }
     }

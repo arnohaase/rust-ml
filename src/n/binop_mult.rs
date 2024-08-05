@@ -13,9 +13,6 @@ impl BinOpMult {
     }
 
     pub fn raw_mult(lhs: &Tensor, rhs: &Tensor) -> Tensor {
-        if lhs.is_zero() || rhs.is_zero() {
-            return Tensor::zero();
-        }
         if lhs.is_one() {
             return rhs.clone_with_new_id();
         }
