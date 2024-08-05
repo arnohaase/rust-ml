@@ -73,15 +73,16 @@ mod test {
     use crate::tensor::{BlasEnv, DimensionKind, Tensor, TensorEnv};
     use crate::tracker::{BinaryTensorOp, ExecutionTracker, RegularExecutionTracker, TrackerExpression};
 
-    // #[rstest]
-    // #[case::constant(vec![5.0], 5.0)]
-    // #[case::linear(vec![1.0, 3.0], 7.0)]
-    // #[case::quadratic(vec![1.0, 3.0, 4.0], 23.0)]
-    // fn test_calc(#[case] poly: Vec<f64>, #[case] expected_calc_result: f64) {
-    //     let x = 2.0;
-    //     let actual: Tensor = BinOpPolynomial{}.calc(&Tensor::vector(poly, DimensionKind::Polynomial), &Tensor::scalar(x));
-    //     actual.assert_pretty_much_equal_to(&Tensor::scalar(expected_calc_result));
-    // }
+    #[rstest]
+    #[case::constant(vec![5.0], 5.0)]
+    #[case::linear(vec![1.0, 3.0], 7.0)]
+    #[case::quadratic(vec![1.0, 3.0, 4.0], 23.0)]
+    fn test_calc(#[case] poly: Vec<f64>, #[case] expected_calc_result: f64) {
+        let env = BlasEnv {};
+        let x = 2.0;
+        let actual = BinOpPolynomial{}.calc(&env.vector(poly, DimensionKind::Polynomial), &env.scalar(x));
+        actual.assert_pretty_much_equal_to(&env.scalar(expected_calc_result));
+    }
 
     #[test]
     fn test_grad() {
