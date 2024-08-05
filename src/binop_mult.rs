@@ -13,12 +13,12 @@ impl BinOpMult {
     }
 
     pub fn raw_mult(lhs: &Tensor, rhs: &Tensor) -> Tensor {
-        if lhs.is_one() {
-            return rhs.clone_with_new_id();
-        }
-        if rhs.is_one() {
-            return lhs.clone_with_new_id();
-        }
+        // if lhs.is_one() {
+        //     return rhs.clone_with_new_id();
+        // }
+        // if rhs.is_one() {
+        //     return lhs.clone_with_new_id();
+        // }
 
         if lhs.is_scalar() {
             return Self::raw_mult_scalar(lhs, rhs);

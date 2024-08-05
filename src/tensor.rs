@@ -90,14 +90,6 @@ impl Tensor {
         self.dimensions.len() == 1
     }
 
-    pub fn is_zero(&self) -> bool {
-        self.is_scalar() && self.buf.read().unwrap()[0] == 0.0
-    }
-
-    pub fn is_one(&self) -> bool {
-        self.is_scalar() && self.buf.read().unwrap()[0] == 1.0
-    }
-
     pub fn id(&self) -> u32 {
         self.id
     }
