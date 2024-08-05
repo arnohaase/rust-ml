@@ -88,7 +88,7 @@ impl <'env, E: TensorEnv> GradientCalcWorker<'env, E> {
             grad_cache: Default::default(),
             work_list: vec![],
         };
-        //TODO separate storage to avoid multiplying with 1?
+        //TODO separate storage to avoid multiplying with 1 --> optimization
         result.grad_cache.insert(for_ultimate_input.id(), Some(for_ultimate_input.env().scalar(1.0))); // pre-filling for termination
         result
     }
