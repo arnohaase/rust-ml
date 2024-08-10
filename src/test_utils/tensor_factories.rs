@@ -1,4 +1,5 @@
-use crate::tensor::{Dimension, DimensionKind, Tensor, TensorEnv};
+use crate::tensor::{Dimension, DimensionKind, Tensor};
+use crate::tensor_env::TensorEnv;
 
 
 /// This function is meant for test fixtures: it parses a string representation for a tensor
@@ -99,7 +100,8 @@ fn parse_dimension_sizes(spec: &str, num_dims: usize, depth: usize, offs: &mut u
 
 #[cfg(test)]
 mod test {
-    use crate::tensor::{BlasEnv, Dimension, DimensionKind, TensorEnv};
+    use crate::tensor::{Dimension, DimensionKind};
+    use crate::tensor_env::{BlasEnv, TensorEnv};
     use crate::test_utils::tensor_factories::tensor_from_spec;
 
     #[test]

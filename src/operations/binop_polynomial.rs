@@ -1,4 +1,5 @@
-use crate::tensor::{BlasEnv, Tensor, TensorEnv};
+use crate::tensor::Tensor;
+use crate::tensor_env::{BlasEnv, TensorEnv};
 use crate::tracker::BinaryTensorOp;
 
 /// treats the first argument (which must be a vector) as scalar coefficients in a polynomial,
@@ -70,7 +71,8 @@ mod test {
     use rstest::rstest;
 
     use crate::operations::binop_polynomial::BinOpPolynomial;
-    use crate::tensor::{BlasEnv, DimensionKind, Tensor, TensorEnv};
+    use crate::tensor::{DimensionKind, Tensor};
+    use crate::tensor_env::{BlasEnv, TensorEnv};
     use crate::tracker::{BinaryTensorOp, ExecutionTracker, RegularExecutionTracker, TrackerExpression};
 
     #[rstest]

@@ -1,5 +1,6 @@
 use blas::dscal;
-use crate::tensor::{BlasEnv, Tensor, TensorEnv};
+use crate::tensor::Tensor;
+use crate::tensor_env::{BlasEnv, TensorEnv};
 use crate::tracker::UnaryTensorOp;
 
 #[derive(Debug)]

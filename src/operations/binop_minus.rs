@@ -2,7 +2,8 @@ use blas::daxpy;
 
 use crate::operations::calc_utils::chunk_wise_bin_op;
 use crate::operations::unop_minus::UnOpMinus;
-use crate::tensor::{BlasEnv, Tensor, TensorEnv};
+use crate::tensor::Tensor;
+use crate::tensor_env::BlasEnv;
 use crate::tracker::BinaryTensorOp;
 
 pub fn raw_minus<'env>(lhs: &Tensor<'env, BlasEnv>, rhs: &Tensor<'env, BlasEnv>) -> Tensor<'env, BlasEnv> {

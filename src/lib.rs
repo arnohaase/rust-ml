@@ -2,8 +2,9 @@ use openblas_src;
 
 //TODO
 
-mod operations;
-mod tensor;
+pub mod operations;
+pub mod tensor;
+pub mod tensor_env;
 #[cfg(test)]
 pub mod test_utils;
 mod tracker;

@@ -4,6 +4,7 @@ use std::sync::RwLock;
 
 use lazy_static::lazy_static;
 use triomphe::Arc;
+use crate::tensor_env::{BlasEnv, TensorEnv};
 
 
 #[derive(Clone, Eq, PartialEq, Debug, Copy)]
@@ -27,44 +28,6 @@ lazy_static! {
 pub fn new_tensor_id() -> u32 {
     TENSOR_ID_COUNTER.fetch_add(1, Ordering::SeqCst)
 }
-
-
-
-pub trait TensorEnv {
-    type Buffer: Clone;
-
-    fn create_tensor(&self, dimensions: Vec<Dimension>, buf: Vec<f64>) -> Tensor<Self>;
-
-    fn scalar(&self, x: f64) -> Tensor<Self> {
-        self.create_tensor(vec![], vec![x])
-    }
-
-    fn vector(&self, xs: Vec<f64>, kind: DimensionKind) -> Tensor<Self> {
-        self.create_tensor(vec![Dimension {
-            len: xs.len(),
-            kind,
-        }], xs)
-    }
-}
-
-
-pub struct BlasEnv {
-}
-
-impl TensorEnv for BlasEnv {
-    type Buffer = Arc<RwLock<Vec<f64>>>;
-
-    fn create_tensor(&self, dimensions: Vec<Dimension>, buf: Vec<f64>) -> Tensor<Self> {
-        Tensor {
-            env: &self,
-            id: new_tensor_id(),
-            version: Default::default(),
-            dimensions,
-            buf: Arc::new(RwLock::new(buf)),
-        }
-    }
-}
-
 
 
 pub struct Tensor<'env, E: TensorEnv + ?Sized> {
@@ -116,6 +79,15 @@ fn write_rec(f: &mut Formatter<'_>, buf: &[f64], dimensions: &[Dimension]) -> st
 
 
 impl <'env, E: TensorEnv> Tensor<'env, E> {
+    pub(crate) fn create_from_raw(env: &'env E, dimensions: Vec<Dimension>, buf: E::Buffer) -> Tensor<'env, E> {
+        Tensor {
+            env,
+            id: new_tensor_id(),
+            version: Default::default(),
+            dimensions,
+            buf,
+        }
+    }
 
     pub fn is_scalar(&self) -> bool {
         self.dimensions.is_empty()

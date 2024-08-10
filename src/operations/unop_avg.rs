@@ -1,5 +1,6 @@
 use crate::operations::unop_sum::sum_raw;
-use crate::tensor::{BlasEnv, Tensor};
+use crate::tensor::Tensor;
+use crate::tensor_env::BlasEnv;
 use crate::tracker::UnaryTensorOp;
 
 #[derive(Debug)]

@@ -6,7 +6,8 @@ use std::sync::RwLock;
 
 use rustc_hash::FxHashMap;
 
-use crate::tensor::{Tensor, TensorEnv};
+use crate::tensor::Tensor;
+use crate::tensor_env::TensorEnv;
 
 pub trait UnaryTensorOp<E: TensorEnv>: Debug {
     fn calc<'env>(&self, tensor: &Tensor<'env, E>) -> Tensor<'env, E>;
@@ -196,7 +197,8 @@ mod test {
     use crate::operations::binop_plus::BinOpPlus;
     use crate::operations::binop_polynomial::BinOpPolynomial;
 
-    use crate::tensor::{BlasEnv, DimensionKind, Tensor, TensorEnv};
+    use crate::tensor::{DimensionKind, Tensor};
+    use crate::tensor_env::{BlasEnv, TensorEnv};
     use crate::tracker::{ExecutionTracker, RegularExecutionTracker, TrackerExpression};
     use crate::operations::unop_avg::UnOpAvg;
 
