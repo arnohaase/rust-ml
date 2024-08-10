@@ -89,6 +89,8 @@ impl <'env, E: TensorEnv> Clone for Tensor<'env, E> {
 
 impl <'env> Debug for Tensor<'env, BlasEnv> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}:", self.dimensions.iter().map(|d| d.kind).collect::<Vec<_>>())?;
+
         match self.dimensions().len() {
             0 => write!(f, "{}", self.buf.read().unwrap()[0]),
             1 => write!(f, "{:?}", self.buf.read().unwrap()),

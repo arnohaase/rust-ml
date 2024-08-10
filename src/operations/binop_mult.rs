@@ -75,21 +75,21 @@ mod test {
     use rstest::rstest;
 
     use crate::operations::binop_mult::BinOpMult;
-    use crate::tensor::{Dimension, DimensionKind, Tensor};
+    use crate::tensor::{BlasEnv, Dimension, DimensionKind, Tensor};
+    use crate::test_utils::tensor_factories::tensor_from_spec;
 
-    // #[rstest]
-    // #[case(Tensor::vector(vec![1.0, 2.0, 3.0], DimensionKind::Collection),
-    //     Tensor::from_raw(
-    //         vec![Dimension { len: 3, kind: DimensionKind::Collection}, Dimension { len: 2, kind: DimensionKind::Polynomial},],
-    //         vec![ 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]),
-    //     Tensor::from_raw(
-    //         vec![Dimension { len: 3, kind: DimensionKind::Collection}, Dimension { len: 2, kind: DimensionKind::Polynomial},],
-    //         vec![ 3.0, 4.0, 10.0, 12.0, 21.0, 24.0]),
-    // )]
-    // fn test_calc(#[case] lhs: Tensor, #[case] rhs: Tensor, #[case] expected: Tensor) {
-    //     println!("{:?} * {:?} ?= {:?}", lhs, rhs, expected);
-    //     BinOpMult::raw_mult(&lhs, &rhs).assert_pretty_much_equal_to(&expected);
-    //     BinOpMult::raw_mult(&rhs, &lhs).assert_pretty_much_equal_to(&expected);
-    // }
+    #[rstest]
+    #[case("C:[1,2,3]", "C-P:[[3,4][5,6][7,8]]", "C-P:[[3,4][10,12][21,24]]")]
+    fn test_calc(#[case] lhs_spec: &str, #[case] rhs_spec: &str, #[case] expected_spec: &str) {
+        let env = BlasEnv{};
+
+        let lhs = tensor_from_spec(lhs_spec, &env);
+        let rhs = tensor_from_spec(rhs_spec, &env);
+        let expected = tensor_from_spec(expected_spec, &env);
+
+        println!("{:?} * {:?} ?= {:?}", lhs, rhs, expected);
+        BinOpMult::raw_mult(&lhs, &rhs).assert_pretty_much_equal_to(&expected);
+        BinOpMult::raw_mult(&rhs, &lhs).assert_pretty_much_equal_to(&expected);
+    }
 }
 
