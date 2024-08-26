@@ -118,6 +118,7 @@ impl <'env, E: TensorEnv> Tensor<'env, E> {
         result
     }
 
+    //TODO return structured data, access by dimension etc
     pub fn data(&self) -> Vec<f64> {
         E::data_from_buffer(&self.buf)
     }
