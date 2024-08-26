@@ -50,14 +50,16 @@ impl <'env, E: TensorEnv> Clone for Tensor<'env, E> {
     }
 }
 
-impl <'env> Debug for Tensor<'env, BlasEnv> {
+impl <'env, E: TensorEnv> Debug for Tensor<'env, E> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{:?}:", self.dimensions.iter().map(|d| d.kind).collect::<Vec<_>>())?;
 
+        let buf = self.data();
+
         match self.dimensions().len() {
-            0 => write!(f, "{}", self.buf.read().unwrap()[0]),
-            1 => write!(f, "{:?}", self.buf.read().unwrap()),
-            _ => write_rec(f, &self.buf().read().unwrap(), self.dimensions()),
+            0 => write!(f, "{}", buf[0]),
+            1 => write!(f, "{:?}", buf),
+            _ => write_rec(f, buf.as_ref(), self.dimensions()),
         }
     }
 }
@@ -114,6 +116,10 @@ impl <'env, E: TensorEnv> Tensor<'env, E> {
         let mut result = self.clone();
         result.id = new_tensor_id();
         result
+    }
+
+    pub fn data(&self) -> Vec<f64> {
+        E::data_from_buffer(&self.buf)
     }
 }
 

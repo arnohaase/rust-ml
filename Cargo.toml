@@ -16,6 +16,8 @@ triomphe = "0.1"
 blas = "0.22"
 openblas-src = { version = "0.10", features = ["static"] }
 
+wgpu = "22.1"
+
 #log = "0.4.21"
 #tracing = "0"
 #mathru = "0"

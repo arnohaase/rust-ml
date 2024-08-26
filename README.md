@@ -59,3 +59,5 @@ can be potentially lifted to match the other tensor's geometry.
 * Gradient Descent: https://www.youtube.com/watch?v=tIeHLnjs5U8&t=13s
 * GPUs vs CPUs for training: https://gcore.com/blog/deep-learning-gpu/
 * library for lin alg on accelerated hardware  https://github.com/LaurentMazare/xla-rs
+* The need for staging buffers: https://www.reddit.com/r/wgpu/comments/13zqe1u/can_someone_please_explain_to_me_the_whole_buffer/
+
