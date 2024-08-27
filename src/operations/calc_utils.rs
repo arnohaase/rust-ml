@@ -44,7 +44,7 @@ pub fn chunk_wise_bin_op<'env>(
     lhs: &Tensor<'env, BlasEnv>,
     rhs: &Tensor<'env, BlasEnv>,
     is_commutative: bool,
-    chunk_op: impl Fn(usize, &[f64], usize, &mut [f64], usize),
+    chunk_op: impl Fn(usize, &[f32], usize, &mut [f32], usize),
 ) -> Tensor<'env, BlasEnv> {
     let lhs_buf = lhs.buf().read().unwrap();
     let rhs_buf = rhs.buf().read().unwrap();
@@ -62,14 +62,14 @@ pub fn chunk_wise_bin_op<'env>(
 }
 
 fn _chunk_wise_bin_op<'env>(
-    lhs_buf: &[f64],
-    rhs_buf: &[f64],
+    lhs_buf: &[f32],
+    rhs_buf: &[f32],
     lhs_dim: &[Dimension],
     rhs_dim: &[Dimension],
-    chunk_op: impl Fn(usize, &[f64], usize, &mut [f64], usize),
+    chunk_op: impl Fn(usize, &[f32], usize, &mut [f32], usize),
     env: &'env BlasEnv,
 ) -> Tensor<'env, BlasEnv> {
-    let mut result_buf: Vec<f64>;
+    let mut result_buf: Vec<f32>;
     let result_dim: Vec<Dimension>;
     match fit_dimensions(lhs_dim, rhs_dim) {
         FitDimensionsResult::Mismatch =>

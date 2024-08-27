@@ -1,6 +1,4 @@
-use std::borrow::Cow;
 use std::sync::RwLock;
-use async_std::task::block_on;
 use triomphe::Arc;
 use wgpu::util::DeviceExt;
 use crate::tensor::{Dimension, DimensionKind, Tensor};
@@ -9,15 +7,15 @@ use crate::tensor::{Dimension, DimensionKind, Tensor};
 pub trait TensorEnv {
     type Buffer: Clone;
 
-    fn data_from_buffer(&self, buf: &Self::Buffer) -> Vec<f64>;
+    fn data_from_buffer(&self, buf: &Self::Buffer) -> Vec<f32>;
 
-    fn create_tensor(&self, dimensions: Vec<Dimension>, buf: Vec<f64>) -> Tensor<Self>;
+    fn create_tensor(&self, dimensions: Vec<Dimension>, buf: Vec<f32>) -> Tensor<Self>;
 
-    fn scalar(&self, x: f64) -> Tensor<Self> {
+    fn scalar(&self, x: f32) -> Tensor<Self> {
         self.create_tensor(vec![], vec![x])
     }
 
-    fn vector(&self, xs: Vec<f64>, kind: DimensionKind) -> Tensor<Self> {
+    fn vector(&self, xs: Vec<f32>, kind: DimensionKind) -> Tensor<Self> {
         self.create_tensor(vec![Dimension {
             len: xs.len(),
             kind,
@@ -30,13 +28,13 @@ pub struct BlasEnv {
 }
 
 impl TensorEnv for BlasEnv {
-    type Buffer = Arc<RwLock<Vec<f64>>>;
+    type Buffer = Arc<RwLock<Vec<f32>>>;
 
-    fn data_from_buffer(&self, buf: &Arc<RwLock<Vec<f64>>>) -> Vec<f64> {
+    fn data_from_buffer(&self, buf: &Arc<RwLock<Vec<f32>>>) -> Vec<f32> {
         buf.read().unwrap().to_vec()
     }
 
-    fn create_tensor(&self, dimensions: Vec<Dimension>, buf: Vec<f64>) -> Tensor<Self> {
+    fn create_tensor(&self, dimensions: Vec<Dimension>, buf: Vec<f32>) -> Tensor<Self> {
         Tensor::create_from_raw(&self, dimensions, Arc::new(RwLock::new(buf)))
     }
 
@@ -45,8 +43,8 @@ impl TensorEnv for BlasEnv {
 
 
 pub struct WgpuEnv {
-    device: wgpu::Device,
-    queue: wgpu::Queue,
+    pub device: wgpu::Device,
+    pub queue: wgpu::Queue,
 }
 
 impl WgpuEnv {
@@ -93,12 +91,23 @@ impl WgpuEnv {
 
         // todo!()
     }
+
+    pub fn create_storage_buffer(&self, size: wgpu::BufferAddress) -> wgpu::Buffer {
+        self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: None, //TODO
+            size,
+            usage: wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_SRC
+                | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        })
+    }
 }
 
 impl TensorEnv for WgpuEnv {
     type Buffer = Arc<wgpu::Buffer>;
 
-    fn data_from_buffer(&self, buf: &Self::Buffer) -> Vec<f64> {
+    fn data_from_buffer(&self, buf: &Self::Buffer) -> Vec<f32> {
         let size = buf.size();
 
         //TODO pool?
@@ -132,7 +141,7 @@ impl TensorEnv for WgpuEnv {
         result
     }
 
-    fn create_tensor(&self, dimensions: Vec<Dimension>, buf: Vec<f64>) -> Tensor<Self> {
+    fn create_tensor(&self, dimensions: Vec<Dimension>, buf: Vec<f32>) -> Tensor<Self> {
         //TODO work from a pool?
         let buf = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: None, //TODO

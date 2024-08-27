@@ -79,7 +79,7 @@ mod test {
     #[case::constant(vec![5.0], 5.0)]
     #[case::linear(vec![1.0, 3.0], 7.0)]
     #[case::quadratic(vec![1.0, 3.0, 4.0], 23.0)]
-    fn test_calc(#[case] poly: Vec<f64>, #[case] expected_calc_result: f64) {
+    fn test_calc(#[case] poly: Vec<f32>, #[case] expected_calc_result: f32) {
         let env = BlasEnv {};
         let x = 2.0;
         let actual = BinOpPolynomial{}.calc(&env.vector(poly, DimensionKind::Polynomial), &env.scalar(x));

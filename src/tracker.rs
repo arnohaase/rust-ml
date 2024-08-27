@@ -204,7 +204,7 @@ mod test {
 
     #[test]
     fn test_sin_poly_mult() {
-        const EPS: f64 = 1e-2;
+        const EPS: f32 = 1e-2;
 
         let env = BlasEnv{};
 
@@ -218,7 +218,7 @@ mod test {
         let mut xs = Vec::new();
         let mut y_ref = Vec::new();
         for _ in 0..2000 {
-            let x: f64 = rand::thread_rng().gen_range(-1.6..1.6);
+            let x: f32 = rand::thread_rng().gen_range(-1.6..1.6);
             xs.push(x);
             y_ref.push(x.sin());
         }
@@ -268,7 +268,7 @@ mod test {
 
     #[test]
     fn test_sin_poly_builtin() {
-        const EPS: f64 = 1e-2;
+        const EPS: f32 = 1e-2;
 
         let env = BlasEnv{};
 
@@ -284,7 +284,7 @@ mod test {
         let mut xs = Vec::new();
         let mut y_ref = Vec::new();
         for _ in 0..2000 {
-            let x: f64 = rand::thread_rng().gen_range(-1.6..1.6);
+            let x: f32 = rand::thread_rng().gen_range(-1.6..1.6);
             xs.push(x);
             y_ref.push(x.sin());
         }

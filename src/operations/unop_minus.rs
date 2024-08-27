@@ -1,4 +1,4 @@
-use blas::dscal;
+use blas::sscal;
 use crate::tensor::Tensor;
 use crate::tensor_env::{BlasEnv, TensorEnv};
 use crate::tracker::UnaryTensorOp;
@@ -10,7 +10,7 @@ impl UnOpMinus {
     pub fn raw_minus<'env>(tensor: &Tensor<'env, BlasEnv>) -> Tensor<'env, BlasEnv> {
         let mut result = tensor.buf().read().unwrap().clone();
         unsafe {
-            dscal(result.len() as i32, -1.0, result.as_mut_slice(), 1);
+            sscal(result.len() as i32, -1.0, result.as_mut_slice(), 1);
         }
         tensor.env().create_tensor(tensor.dimensions().into(), result)
     }

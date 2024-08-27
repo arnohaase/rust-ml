@@ -1,4 +1,4 @@
-use blas::daxpy;
+use blas::saxpy;
 
 use crate::operations::calc_utils::chunk_wise_bin_op;
 use crate::operations::unop_minus::UnOpMinus;
@@ -32,9 +32,9 @@ impl BinOpMinus {
         chunk_wise_bin_op(lhs, rhs, false, Self::raw_minus_chunk)
     }
 
-    fn raw_minus_chunk(n: usize, rhs: &[f64], inc_rhs: usize, lhs: &mut[f64], inc_lhs: usize) {
+    fn raw_minus_chunk(n: usize, rhs: &[f32], inc_rhs: usize, lhs: &mut[f32], inc_lhs: usize) {
         unsafe {
-            daxpy(n as i32, -1.0, rhs, inc_rhs as i32, lhs, inc_lhs as i32);
+            saxpy(n as i32, -1.0, rhs, inc_rhs as i32, lhs, inc_lhs as i32);
         }
     }
 }

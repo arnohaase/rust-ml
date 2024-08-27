@@ -1,4 +1,4 @@
-use blas::dscal;
+use blas::sscal;
 
 use crate::operations::binop_plus::BinOpPlus;
 use crate::operations::calc_utils::chunk_wise_bin_op;
@@ -57,12 +57,12 @@ fn raw_mult_scalar_blas<'env>(scalar: &Tensor<'env, BlasEnv>, regular: &Tensor<'
     let scalar = scalar.buf().read().unwrap()[0];
     let mut result = regular.buf().read().unwrap().to_vec();
     unsafe {
-        dscal(result.len() as i32, scalar, result.as_mut_slice(), 1);
+        sscal(result.len() as i32, scalar, result.as_mut_slice(), 1);
     }
     return regular.env().create_tensor(regular.dimensions().into(), result);
 }
 
-fn raw_mult_chunk_blas(n: usize, rhs: &[f64], inc_rhs: usize, lhs: &mut[f64], inc_lhs: usize) {
+fn raw_mult_chunk_blas(n: usize, rhs: &[f32], inc_rhs: usize, lhs: &mut[f32], inc_lhs: usize) {
     let mut offs_lhs = 0;
     let mut offs_rhs = 0;
 

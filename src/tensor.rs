@@ -4,7 +4,8 @@ use std::sync::RwLock;
 
 use lazy_static::lazy_static;
 use triomphe::Arc;
-use crate::tensor_env::{BlasEnv, TensorEnv};
+use wgpu::Buffer;
+use crate::tensor_env::{BlasEnv, TensorEnv, WgpuEnv};
 
 
 #[derive(Clone, Eq, PartialEq, Debug, Copy)]
@@ -66,7 +67,7 @@ impl <'env, E: TensorEnv> Debug for Tensor<'env, E> {
     }
 }
 
-fn write_rec(f: &mut Formatter<'_>, buf: &[f64], dimensions: &[Dimension]) -> std::fmt::Result {
+fn write_rec(f: &mut Formatter<'_>, buf: &[f32], dimensions: &[Dimension]) -> std::fmt::Result {
     if dimensions.len() == 1 {
         write!(f, "{:?}", buf)
     }
@@ -121,14 +122,8 @@ impl <'env, E: TensorEnv> Tensor<'env, E> {
     }
 
     //TODO return structured data, access by dimension etc
-    pub fn data(&self) -> Vec<f64> {
+    pub fn data(&self) -> Vec<f32> {
         self.env.data_from_buffer(&self.buf)
-    }
-}
-
-impl <'env> Tensor<'env, BlasEnv> {
-    pub fn buf(&self) -> &RwLock<Vec<f64>> {
-        self.buf.as_ref()
     }
 
     /// This is largely for testing: It checks if two tensors have the same geometry and 'pretty
@@ -136,14 +131,14 @@ impl <'env> Tensor<'env, BlasEnv> {
     ///  for rounding errors is pretty lax - this is meant for verifying program logic, not
     ///  numerical accuracy
     #[must_use]
-    pub fn is_pretty_much_equal_to(&self, other: &Tensor<'env, BlasEnv>) -> bool {
-        const THRESHOLD: f64 = 1e-5;
+    pub fn is_pretty_much_equal_to(&self, other: &Tensor<'env, E>) -> bool {
+        const THRESHOLD: f32 = 1e-5;
 
         if self.dimensions() != other.dimensions() {
             return false;
         }
-        let buf_a = self.buf().read().unwrap();
-        let buf_b = other.buf().read().unwrap();
+        let buf_a = self.data();
+        let buf_b = other.data();
         for i in 0..buf_a.len() {
             if (buf_a[i] - buf_b[i]).abs() > THRESHOLD {
                 return false;
@@ -152,10 +147,22 @@ impl <'env> Tensor<'env, BlasEnv> {
         true
     }
 
-    pub fn assert_pretty_much_equal_to(&self, other: &Tensor<'env, BlasEnv>) {
+    pub fn assert_pretty_much_equal_to(&self, other: &Tensor<'env, E>) {
         if !self.is_pretty_much_equal_to(other) {
             panic!("{:?} != {:?}", self, other);
         }
+    }
+}
+
+impl <'env> Tensor<'env, BlasEnv> {
+    pub fn buf(&self) -> &RwLock<Vec<f32>> {
+        self.buf.as_ref()
+    }
+}
+
+impl <'env> Tensor<'env, WgpuEnv> {
+    pub fn buf(&self) -> &Buffer {
+        self.buf.as_ref()
     }
 }
 

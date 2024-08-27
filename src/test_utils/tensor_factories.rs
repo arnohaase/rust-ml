@@ -13,7 +13,7 @@ use crate::tensor_env::{BlasEnv, TensorEnv, WgpuEnv};
 ///  parse a tensor specification.
 pub fn tensor_from_spec<'a, E: TensorEnv>(spec: &str, env: &'a E) -> Tensor<'a, E> {
     if !spec.contains(":") {
-        return env.scalar(spec.parse::<f64>().unwrap());
+        return env.scalar(spec.parse::<f32>().unwrap());
     }
 
     let s: Vec<&str> = spec.split(':').collect();
@@ -48,7 +48,7 @@ pub fn tensor_from_spec<'a, E: TensorEnv>(spec: &str, env: &'a E) -> Tensor<'a, 
     env.create_tensor(dimensions, buf)
 }
 
-fn parse_numbers(spec: &str) -> Vec<f64> {
+fn parse_numbers(spec: &str) -> Vec<f32> {
     let spec = &spec[spec.find(':').unwrap()+1 ..];
 
     let raw_nums: Vec<&str> = spec.split(&['[', ']', ',', ' '])
@@ -56,7 +56,7 @@ fn parse_numbers(spec: &str) -> Vec<f64> {
         .collect();
 
     raw_nums.iter()
-        .map(|s| s.parse::<f64>().unwrap())
+        .map(|s| s.parse::<f32>().unwrap())
         .collect()
 }
 

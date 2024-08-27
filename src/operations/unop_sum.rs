@@ -1,4 +1,4 @@
-use blas::{daxpy, dscal};
+use blas::{saxpy, sscal};
 
 use crate::tensor::Tensor;
 use crate::tensor_env::{BlasEnv, TensorEnv};
@@ -27,7 +27,7 @@ pub fn sum_raw<'env>(tensor: &Tensor<'env, BlasEnv>, divide_by_len: bool) -> Ten
             // this is an optimization for the important special case of summarizing scalars
             let mut sum = buf.iter().sum();
             if divide_by_len {
-                sum /= buf.len() as f64;
+                sum /= buf.len() as f32;
             }
             tensor.env().create_tensor(vec![], vec![sum])
         }
@@ -38,12 +38,12 @@ pub fn sum_raw<'env>(tensor: &Tensor<'env, BlasEnv>, divide_by_len: bool) -> Ten
 
             for chunk in buf[chunk_size..].chunks(chunk_size) {
                 unsafe {
-                    daxpy(chunk_size as i32, 1.0, chunk, 1, &mut result_buf, 1);
+                    saxpy(chunk_size as i32, 1.0, chunk, 1, &mut result_buf, 1);
                 }
             }
             if divide_by_len {
                 unsafe {
-                    dscal(chunk_size as i32, 1.0 / dim[0].len as f64, &mut result_buf, 1);
+                    sscal(chunk_size as i32, 1.0 / dim[0].len as f32, &mut result_buf, 1);
                 }
             }
 
