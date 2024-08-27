@@ -1,5 +1,6 @@
+use async_std::task::block_on;
 use crate::tensor::{Dimension, DimensionKind, Tensor};
-use crate::tensor_env::TensorEnv;
+use crate::tensor_env::{BlasEnv, TensorEnv, WgpuEnv};
 
 
 /// This function is meant for test fixtures: it parses a string representation for a tensor

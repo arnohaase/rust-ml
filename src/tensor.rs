@@ -52,7 +52,9 @@ impl <'env, E: TensorEnv> Clone for Tensor<'env, E> {
 
 impl <'env, E: TensorEnv> Debug for Tensor<'env, E> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}:", self.dimensions.iter().map(|d| d.kind).collect::<Vec<_>>())?;
+        if self.dimensions.len() > 0 {
+            write!(f, "{:?}:", self.dimensions.iter().map(|d| d.kind).collect::<Vec<_>>())?;
+        }
 
         let buf = self.data();
 
@@ -120,7 +122,7 @@ impl <'env, E: TensorEnv> Tensor<'env, E> {
 
     //TODO return structured data, access by dimension etc
     pub fn data(&self) -> Vec<f64> {
-        E::data_from_buffer(&self.buf)
+        self.env.data_from_buffer(&self.buf)
     }
 }
 
@@ -154,5 +156,24 @@ impl <'env> Tensor<'env, BlasEnv> {
         if !self.is_pretty_much_equal_to(other) {
             panic!("{:?} != {:?}", self, other);
         }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use async_std::task::block_on;
+    use rstest::rstest;
+    use crate::tensor_env::{BlasEnv, TensorEnv, WgpuEnv};
+    use crate::test_utils::tensor_factories::tensor_from_spec;
+    use crate::with_all_envs;
+
+    #[rstest]
+    #[case("1", "1")]
+    #[case("R:[2]", "[Regular]:[2.0]")]
+    fn test_debug(#[case] tensor_spec: &str, #[case] debug_repr: &str) {
+        with_all_envs!(env => {
+            let tensor = tensor_from_spec(tensor_spec, &env);
+            assert_eq!(format!("{:?}", tensor), debug_repr);
+        })
     }
 }

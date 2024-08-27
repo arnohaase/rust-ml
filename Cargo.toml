@@ -8,9 +8,11 @@ rstest = "0"
 #simple_logger = "4"
 
 [dependencies]
-lazy_static = "1"
+async-std = "1.12"
+bytemuck = "1.17"
+lazy_static = "1.5"
 rand = "0"
-rustc-hash = "1"
+rustc-hash = "2.0"
 triomphe = "0.1"
 
 blas = "0.22"
