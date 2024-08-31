@@ -1,5 +1,8 @@
-use std::sync::RwLock;
+use std::borrow::Cow;
+use std::sync::{Mutex, RwLock};
+use rustc_hash::FxHashMap;
 use triomphe::Arc;
+use wgpu::{BindGroup, BindingResource, ComputePipeline, ShaderModule};
 use wgpu::util::DeviceExt;
 use crate::tensor::{Dimension, DimensionKind, Tensor};
 
@@ -37,14 +40,13 @@ impl TensorEnv for BlasEnv {
     fn create_tensor(&self, dimensions: Vec<Dimension>, buf: Vec<f32>) -> Tensor<Self> {
         Tensor::create_from_raw(&self, dimensions, Arc::new(RwLock::new(buf)))
     }
-
-
 }
 
 
 pub struct WgpuEnv {
     pub device: wgpu::Device,
     pub queue: wgpu::Queue,
+    cached_shaders: Mutex<FxHashMap<String, Arc<CachedWgpuShader>>>,
 }
 
 impl WgpuEnv {
@@ -69,27 +71,45 @@ impl WgpuEnv {
             .unwrap() //TODO anyhow
             ;
 
-
-        // let mut cs_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-        //     label: None,
-        //     source: wgpu::ShaderSource::Wgsl(Cow::Borrowed("asdf")),
-        // });
-
-        // let compute_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-        //     label: None,
-        //     layout: None,
-        //     module: &cs_module,
-        //     entry_point: "main",
-        //     compilation_options: Default::default(),
-        //     cache: None,
-        // });
-
         WgpuEnv {
             device,
             queue,
+            cached_shaders: Default::default(),
+        }
+    }
+
+    pub fn shader(&self, id: &str, wgsl: impl FnOnce() -> String) -> Arc<CachedWgpuShader> {
+        //TODO alternatives to f32
+        //TODO workgroup size
+
+        let mut cache = self.cached_shaders.lock().unwrap();
+        if let Some(cache_hit) = cache.get(id) {
+            return cache_hit.clone();
         }
 
-        // todo!()
+        let module = self.device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some(id),
+            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(&wgsl())),
+        });
+        let compute_pipeline = self.device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: Some(id),
+            layout: None,
+            module: &module,
+            entry_point: "main",
+            compilation_options: Default::default(),
+            cache: None,
+        });
+        // let bind_group_layout = pipeline.get_bind_group_layout(0);
+
+
+        let new_shader = Arc::new(CachedWgpuShader {
+            id: id.to_string(),
+            module,
+            compute_pipeline,
+        });
+
+        cache.insert(id.to_string(), new_shader.clone());
+        new_shader
     }
 
     pub fn create_storage_buffer(&self, size: wgpu::BufferAddress) -> wgpu::Buffer {
@@ -155,6 +175,30 @@ impl TensorEnv for WgpuEnv {
     }
 }
 
+pub struct CachedWgpuShader {
+    pub id: String,
+    pub module: ShaderModule,
+    pub compute_pipeline: ComputePipeline,
+}
+impl CachedWgpuShader {
+    pub fn bind_group(&self, env: &WgpuEnv, buffers: Vec<BindingResource>) -> BindGroup {
+        let bind_group_layout = self.compute_pipeline.get_bind_group_layout(0);
+
+        let entries = buffers.into_iter()
+            .enumerate()
+            .map(|(i, r)| wgpu::BindGroupEntry {
+                binding: i as u32,
+                resource: r,
+            })
+            .collect::<Vec<_>>();
+
+        env.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some(&self.id),
+            layout: &bind_group_layout,
+            entries: &entries,
+        })
+    }
+}
 
 
 

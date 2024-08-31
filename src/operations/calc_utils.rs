@@ -32,7 +32,7 @@ fn check_dims_contained(
     shorter: &[Dimension],
     factory: impl FnOnce(usize, usize) -> FitDimensionsResult,
 ) -> FitDimensionsResult {
-    for num_nested_dims in 1..= longer.len() - shorter.len() {
+    for num_nested_dims in 0..= longer.len() - shorter.len() {
         if longer[..longer.len()- num_nested_dims].ends_with(shorter) {
             return factory(longer.len() - shorter.len() - num_nested_dims, num_nested_dims);
         }

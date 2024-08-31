@@ -1,6 +1,7 @@
 use std::borrow::Cow;
 use blas::saxpy;
 use triomphe::Arc;
+use wgpu::{BindingResource, BufferAddress, BufferBinding};
 
 use crate::operations::calc_utils::{chunk_wise_bin_op, fit_dimensions, FitDimensionsResult};
 use crate::tensor::Tensor;
@@ -88,81 +89,59 @@ impl BinaryTensorOp<BlasEnv> for BinOpPlus {
 
 impl BinaryTensorOp<WgpuEnv> for BinOpPlus {
     fn calc<'env>(&self, lhs: &Tensor<'env, WgpuEnv>, rhs: &Tensor<'env, WgpuEnv>) -> Tensor<'env, WgpuEnv> {
-        assert_eq!(lhs.dimensions(), rhs.dimensions()); //TODO
-
-        //TODO f32
-        //TODO workgroup size
-        let wgsl = r#"
-            struct Data {
-                values: array<f32>,
-            };
-
-            @group(0) @binding(0) var<storage, read> a: Data;
-            @group(0) @binding(1) var<storage, read> b: Data;
-            @group(0) @binding(2) var<storage, read_write> result: Data;
-
-            @compute @workgroup_size(32)
-            fn main(@builtin(global_invocation_id) id: vec3<u32>) {
-                let index = id.x;
-                result.values[index] = a.values[index] + b.values[index];
+        match fit_dimensions(lhs.dimensions(), rhs.dimensions()) {
+            FitDimensionsResult::Mismatch => todo!("dimension mismatch"),
+            FitDimensionsResult::Equal => plus_wgpu_left_interleaved_dim(lhs, rhs, 1, lhs.buf().size() as usize, 1),
+            FitDimensionsResult::LeftContainsRight { num_wrapper_dims, num_nested_dims } => {
+                let num_chunks = lhs.dimensions()[..num_wrapper_dims].iter().map(|d| d.len).product();
+                let chunk_size = lhs.dimensions()[num_wrapper_dims..].iter().map(|d| d.len).product(); // empty --> 1
+                let num_interleaved: usize = lhs.dimensions()[lhs.dimensions().len() - num_nested_dims..].iter().map(|d| d.len).product();
+                plus_wgpu_left_interleaved_dim(lhs, rhs, num_chunks, chunk_size, num_interleaved)
+            },
+            FitDimensionsResult::RightContainsLeft { num_wrapper_dims, num_nested_dims } => {
+                let num_chunks = rhs.dimensions()[..num_wrapper_dims].iter().map(|d| d.len).product();
+                let chunk_size = rhs.dimensions()[num_wrapper_dims..].iter().map(|d| d.len).product(); // empty --> 1
+                let num_interleaved: usize = rhs.dimensions()[rhs.dimensions().len() - num_nested_dims..].iter().map(|d| d.len).product();
+                plus_wgpu_left_interleaved_dim(rhs, lhs, num_chunks, chunk_size, num_interleaved)
             }
-        "#;
-
-        //TODO caching
-        let module = lhs.env().device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("BinOpPlus"),
-            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(wgsl)),
-        });
-        //TODO caching
-        let compute_pipeline = lhs.env().device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-            label: None, //TODO
-            layout: None,
-            module: &module,
-            entry_point: "main",
-            compilation_options: Default::default(),
-            cache: None,
-        });
-
-        let result_buf = lhs.env().create_storage_buffer(lhs.buf().size());
-
-        let bind_group_layout = compute_pipeline.get_bind_group_layout(0);
-        let bind_group = lhs.env().device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: None, //TODO
-            layout: &bind_group_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: lhs.buf().as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: rhs.buf().as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: result_buf.as_entire_binding(),
-                },
-            ],
-        });
-
-        let mut encoder = lhs.env().device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None }); //TODO label
-        {
-            let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-                label: None, //TODO label
-                timestamp_writes: None,
-            });
-            cpass.set_pipeline(&compute_pipeline);
-            cpass.set_bind_group(0, &bind_group, &[]);
-            cpass.dispatch_workgroups(lhs.buf().size() as u32, 1, 1); //TODO size
         }
-        lhs.env().queue.submit(Some(encoder.finish()));
-
-        Tensor::create_from_raw(lhs.env(), lhs.dimensions().to_vec(), Arc::new(result_buf))
     }
 
     fn grad<'env>(&self, lhs: &Tensor<'env, WgpuEnv>, lhs_grad: &Option<Tensor<'env, WgpuEnv>>, rhs: &Tensor<'env, WgpuEnv>, rhs_grad: &Option<Tensor<'env, WgpuEnv>>) -> Option<Tensor<'env, WgpuEnv>> {
         todo!()
     }
+}
+
+fn plus_wgpu_left_interleaved_dim<'env>(lhs: &Tensor<'env, WgpuEnv>, rhs: &Tensor<'env, WgpuEnv>, num_chunks: usize, chunk_size: usize, interleave_size: usize) -> Tensor<'env, WgpuEnv> {
+    let shader = lhs.env().shader(&format!("+:{interleave_size}:{chunk_size}"), || include_str!("binop_plus.wgsl")
+        .replace("{n}", &interleave_size.to_string())
+        .replace("{chunk_size}", &chunk_size.to_string())
+    );
+
+    let result_buf = lhs.env().create_storage_buffer(lhs.buf().size());
+
+    let bind_group = shader.bind_group(lhs.env(), vec![
+        lhs.buf().as_entire_binding(),
+        rhs.buf().as_entire_binding(),
+        result_buf.as_entire_binding(),
+    ]);
+
+    let mut encoder = lhs.env().device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some(&shader.id) });
+    {
+        let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+            label: Some(&shader.id),
+            timestamp_writes: None,
+        });
+        cpass.set_pipeline(&shader.compute_pipeline);
+        cpass.set_bind_group(0, &bind_group, &[]);
+        cpass.dispatch_workgroups(1, num_chunks as u32, 1);
+    }
+
+    //TODO split chunk parallelism inside and across workgroups
+
+    lhs.env().queue.submit(Some(encoder.finish()));
+
+    Tensor::create_from_raw(lhs.env(), lhs.dimensions().to_vec(), Arc::new(result_buf))
 }
 
 #[cfg(test)]
@@ -175,8 +154,14 @@ mod test {
     use crate::with_all_envs;
 
     #[rstest]
-    #[case("1.0", "2.0", "3.0")]
-    #[case("R:[1, 2, 3]", "R:[4, 5, 6]", "R:[5, 7, 9]")]
+    #[case::scalar("1.0", "2.0", "3.0")]
+    #[case::simple_vec("R:[1, 2, 3]", "R:[4, 5, 6]", "R:[5, 7, 9]")]
+    #[case::nested_left("R-P:[[1,2][3,4]]", "R:[5,6]", "R-P:[[6,7][9,10]]")]
+    #[case::nested_right("R:[5,6]", "R-P:[[1,2][3,4]]", "R-P:[[6,7][9,10]]")]
+    #[case::collection_left("C-R:[[1,2,3][4,5,6]]", "R:[2,3,4]", "C-R:[[3,5,7][6,8,10]]")]
+    #[case::collection_right("R:[2,3,4]", "C-R:[[1,2,3][4,5,6]]", "C-R:[[3,5,7][6,8,10]]")]
+    #[case::both_left("C-R-P:[[[1,2,3]][[4,5,6]]]", "R:[.5]", "C-R-P:[[[1.5,2.5,3.5]][[4.5,5.5,6.5]]]")]
+    #[case::both_right("R:[.5]", "C-R-P:[[[1,2,3]][[4,5,6]]]", "C-R-P:[[[1.5,2.5,3.5]][[4.5,5.5,6.5]]]")]
     fn test_add(#[case] a: &str, #[case] b: &str, #[case] expected: &str) {
         with_all_envs!(env => {
             let a = tensor_from_spec(a, &env);
@@ -187,20 +172,3 @@ mod test {
         })
     }
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
