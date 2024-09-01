@@ -5,22 +5,10 @@ use std::sync::RwLock;
 use lazy_static::lazy_static;
 use triomphe::Arc;
 use wgpu::Buffer;
+use crate::dimension::{Dimension, Dimensions};
 use crate::tensor_env::{BlasEnv, TensorEnv, WgpuEnv};
 
 
-#[derive(Clone, Eq, PartialEq, Debug, Copy)]
-pub enum DimensionKind {
-    Regular,
-    Collection,
-    Polynomial,
-    //TODO RGB etc.
-}
-
-#[derive(Clone, Eq, PartialEq, Debug, Copy)]
-pub struct Dimension {
-    pub len: usize,
-    pub kind: DimensionKind,
-}
 
 
 lazy_static! {
@@ -36,7 +24,7 @@ pub struct Tensor<'env, E: TensorEnv + ?Sized> {
     id: u32,
     version: Arc<AtomicU32>,
     //TODO do we need stride information for autograd stuff? if so, where to put it?
-    dimensions: Vec<Dimension>,
+    dimensions: Dimensions,
     buf: E::Buffer,
 }
 impl <'env, E: TensorEnv> Clone for Tensor<'env, E> {
@@ -53,16 +41,16 @@ impl <'env, E: TensorEnv> Clone for Tensor<'env, E> {
 
 impl <'env, E: TensorEnv> Debug for Tensor<'env, E> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        if self.dimensions.len() > 0 {
-            write!(f, "{:?}:", self.dimensions.iter().map(|d| d.kind).collect::<Vec<_>>())?;
+        if self.dimensions.raw().len() > 0 {
+            write!(f, "{:?}:", self.dimensions.raw().iter().map(|d| d.kind).collect::<Vec<_>>())?;
         }
 
         let buf = self.data();
 
-        match self.dimensions().len() {
+        match self.dimensions().raw().len() {
             0 => write!(f, "{}", buf[0]),
             1 => write!(f, "{:?}", buf),
-            _ => write_rec(f, buf.as_ref(), self.dimensions()),
+            _ => write_rec(f, buf.as_ref(), self.dimensions().raw()),
         }
     }
 }
@@ -84,7 +72,7 @@ fn write_rec(f: &mut Formatter<'_>, buf: &[f32], dimensions: &[Dimension]) -> st
 
 
 impl <'env, E: TensorEnv> Tensor<'env, E> {
-    pub(crate) fn create_from_raw(env: &'env E, dimensions: Vec<Dimension>, buf: E::Buffer) -> Tensor<'env, E> {
+    pub(crate) fn create_from_raw(env: &'env E, dimensions: Dimensions, buf: E::Buffer) -> Tensor<'env, E> {
         Tensor {
             env,
             id: new_tensor_id(),
@@ -95,10 +83,10 @@ impl <'env, E: TensorEnv> Tensor<'env, E> {
     }
 
     pub fn is_scalar(&self) -> bool {
-        self.dimensions.is_empty()
+        self.dimensions.raw().is_empty()
     }
     pub fn is_vector(&self) -> bool {
-        self.dimensions.len() == 1
+        self.dimensions.raw().len() == 1
     }
 
     pub fn id(&self) -> u32 {
@@ -107,7 +95,7 @@ impl <'env, E: TensorEnv> Tensor<'env, E> {
     pub fn version(&self) -> u32 {
         self.version.fetch_add(0, Ordering::Acquire)
     }
-    pub fn dimensions(&self) -> &[Dimension] {
+    pub fn dimensions(&self) -> &Dimensions {
         &self.dimensions
     }
 

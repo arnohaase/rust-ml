@@ -59,7 +59,7 @@ fn raw_mult_scalar_blas<'env>(scalar: &Tensor<'env, BlasEnv>, regular: &Tensor<'
     unsafe {
         sscal(result.len() as i32, scalar, result.as_mut_slice(), 1);
     }
-    return regular.env().create_tensor(regular.dimensions().into(), result);
+    return regular.env().create_tensor(regular.dimensions().clone(), result);
 }
 
 fn raw_mult_chunk_blas(n: usize, rhs: &[f32], inc_rhs: usize, lhs: &mut[f32], inc_lhs: usize) {

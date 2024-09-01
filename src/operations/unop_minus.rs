@@ -12,7 +12,7 @@ impl UnOpMinus {
         unsafe {
             sscal(result.len() as i32, -1.0, result.as_mut_slice(), 1);
         }
-        tensor.env().create_tensor(tensor.dimensions().into(), result)
+        tensor.env().create_tensor(tensor.dimensions().clone(), result)
     }
 }
 

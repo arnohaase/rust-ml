@@ -1,7 +1,5 @@
-use std::borrow::Cow;
 use blas::saxpy;
 use triomphe::Arc;
-use wgpu::{BindingResource, BufferAddress, BufferBinding};
 
 use crate::operations::calc_utils::{chunk_wise_bin_op, fit_dimensions, FitDimensionsResult};
 use crate::tensor::Tensor;
@@ -22,7 +20,7 @@ impl BinOpPlus {
 
         let mut lhs_buf = lhs.buf().write().unwrap();
         let rhs_buf = rhs.buf().read().unwrap();
-        match fit_dimensions(lhs.dimensions(), rhs.dimensions()) {
+        match fit_dimensions(lhs.dimensions().raw(), rhs.dimensions().raw()) {
             FitDimensionsResult::Mismatch => todo!("dimension mismatch"),
             FitDimensionsResult::Equal =>
                 unsafe {
@@ -30,8 +28,8 @@ impl BinOpPlus {
                 }
             FitDimensionsResult::LeftContainsRight { num_wrapper_dims, num_nested_dims } => {
                 //TODO extract to 'Dimensions' data type
-                let chunk_size = lhs.dimensions()[num_wrapper_dims..].iter().map(|d| d.len).product(); // empty --> 1
-                let num_interleaved: usize = lhs.dimensions()[lhs.dimensions().len() - num_nested_dims..].iter().map(|d| d.len).product();
+                let chunk_size = lhs.dimensions().size_without_outer(num_wrapper_dims);
+                let num_interleaved = lhs.dimensions().size_inner(num_nested_dims);
                 for lhs_chunk in lhs_buf.chunks_mut(chunk_size) {
                     for offset in 0..num_interleaved {
                         unsafe {
@@ -89,19 +87,19 @@ impl BinaryTensorOp<BlasEnv> for BinOpPlus {
 
 impl BinaryTensorOp<WgpuEnv> for BinOpPlus {
     fn calc<'env>(&self, lhs: &Tensor<'env, WgpuEnv>, rhs: &Tensor<'env, WgpuEnv>) -> Tensor<'env, WgpuEnv> {
-        match fit_dimensions(lhs.dimensions(), rhs.dimensions()) {
+        match fit_dimensions(lhs.dimensions().raw(), rhs.dimensions().raw()) {
             FitDimensionsResult::Mismatch => todo!("dimension mismatch"),
             FitDimensionsResult::Equal => plus_wgpu_left_interleaved_dim(lhs, rhs, 1, lhs.buf().size() as usize, 1),
             FitDimensionsResult::LeftContainsRight { num_wrapper_dims, num_nested_dims } => {
-                let num_chunks = lhs.dimensions()[..num_wrapper_dims].iter().map(|d| d.len).product();
-                let chunk_size = lhs.dimensions()[num_wrapper_dims..].iter().map(|d| d.len).product(); // empty --> 1
-                let num_interleaved: usize = lhs.dimensions()[lhs.dimensions().len() - num_nested_dims..].iter().map(|d| d.len).product();
+                let num_chunks = lhs.dimensions().size_outer(num_wrapper_dims);
+                let chunk_size = lhs.dimensions().size_without_outer(num_wrapper_dims);
+                let num_interleaved: usize = lhs.dimensions().size_inner(num_nested_dims);
                 plus_wgpu_left_interleaved_dim(lhs, rhs, num_chunks, chunk_size, num_interleaved)
             },
             FitDimensionsResult::RightContainsLeft { num_wrapper_dims, num_nested_dims } => {
-                let num_chunks = rhs.dimensions()[..num_wrapper_dims].iter().map(|d| d.len).product();
-                let chunk_size = rhs.dimensions()[num_wrapper_dims..].iter().map(|d| d.len).product(); // empty --> 1
-                let num_interleaved: usize = rhs.dimensions()[rhs.dimensions().len() - num_nested_dims..].iter().map(|d| d.len).product();
+                let num_chunks = rhs.dimensions().size_outer(num_wrapper_dims);
+                let chunk_size = rhs.dimensions().size_without_outer(num_wrapper_dims);
+                let num_interleaved: usize = rhs.dimensions().size_inner(num_nested_dims);
                 plus_wgpu_left_interleaved_dim(rhs, lhs, num_chunks, chunk_size, num_interleaved)
             }
         }
@@ -141,7 +139,7 @@ fn plus_wgpu_left_interleaved_dim<'env>(lhs: &Tensor<'env, WgpuEnv>, rhs: &Tenso
 
     lhs.env().queue.submit(Some(encoder.finish()));
 
-    Tensor::create_from_raw(lhs.env(), lhs.dimensions().to_vec(), Arc::new(result_buf))
+    Tensor::create_from_raw(lhs.env(), lhs.dimensions().clone(), Arc::new(result_buf))
 }
 
 #[cfg(test)]

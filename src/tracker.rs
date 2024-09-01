@@ -192,12 +192,12 @@ impl <'env, E: TensorEnv> GradientCalcWorker<'env, E> {
 #[cfg(test)]
 mod test {
     use rand::Rng;
+    use crate::dimension::DimensionKind;
     use crate::operations::binop_minus::BinOpMinus;
     use crate::operations::binop_mult::BinOpMult;
     use crate::operations::binop_plus::BinOpPlus;
     use crate::operations::binop_polynomial::BinOpPolynomial;
 
-    use crate::tensor::{DimensionKind, Tensor};
     use crate::tensor_env::{BlasEnv, TensorEnv};
     use crate::tracker::{ExecutionTracker, RegularExecutionTracker, TrackerExpression};
     use crate::operations::unop_avg::UnOpAvg;

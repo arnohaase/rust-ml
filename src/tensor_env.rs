@@ -4,7 +4,8 @@ use rustc_hash::FxHashMap;
 use triomphe::Arc;
 use wgpu::{BindGroup, BindingResource, ComputePipeline, ShaderModule};
 use wgpu::util::DeviceExt;
-use crate::tensor::{Dimension, DimensionKind, Tensor};
+use crate::dimension::{Dimension, DimensionKind, Dimensions};
+use crate::tensor::Tensor;
 
 
 pub trait TensorEnv {
@@ -12,17 +13,17 @@ pub trait TensorEnv {
 
     fn data_from_buffer(&self, buf: &Self::Buffer) -> Vec<f32>;
 
-    fn create_tensor(&self, dimensions: Vec<Dimension>, buf: Vec<f32>) -> Tensor<Self>;
+    fn create_tensor(&self, dimensions: Dimensions, buf: Vec<f32>) -> Tensor<Self>;
 
     fn scalar(&self, x: f32) -> Tensor<Self> {
-        self.create_tensor(vec![], vec![x])
+        self.create_tensor(vec![].into(), vec![x])
     }
 
     fn vector(&self, xs: Vec<f32>, kind: DimensionKind) -> Tensor<Self> {
         self.create_tensor(vec![Dimension {
             len: xs.len(),
             kind,
-        }], xs)
+        }].into(), xs)
     }
 }
 
@@ -37,7 +38,7 @@ impl TensorEnv for BlasEnv {
         buf.read().unwrap().to_vec()
     }
 
-    fn create_tensor(&self, dimensions: Vec<Dimension>, buf: Vec<f32>) -> Tensor<Self> {
+    fn create_tensor(&self, dimensions: Dimensions, buf: Vec<f32>) -> Tensor<Self> {
         Tensor::create_from_raw(&self, dimensions, Arc::new(RwLock::new(buf)))
     }
 }
@@ -70,6 +71,13 @@ impl WgpuEnv {
             .await
             .unwrap() //TODO anyhow
             ;
+
+        println!("{}", device.limits().max_compute_workgroup_size_x);
+        println!("{}", device.limits().max_compute_workgroup_size_y);
+        println!("{}", device.limits().max_compute_workgroup_size_z);
+        println!("{}", device.limits().max_compute_invocations_per_workgroup);
+        println!("{}", device.limits().max_compute_workgroup_storage_size);
+        println!("{}", device.limits().max_compute_workgroups_per_dimension);
 
         WgpuEnv {
             device,
@@ -161,7 +169,7 @@ impl TensorEnv for WgpuEnv {
         result
     }
 
-    fn create_tensor(&self, dimensions: Vec<Dimension>, buf: Vec<f32>) -> Tensor<Self> {
+    fn create_tensor(&self, dimensions: Dimensions, buf: Vec<f32>) -> Tensor<Self> {
         //TODO work from a pool?
         let buf = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: None, //TODO

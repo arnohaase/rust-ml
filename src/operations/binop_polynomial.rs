@@ -31,7 +31,7 @@ impl BinaryTensorOp<BlasEnv> for BinOpPolynomial {
             }
             result_buf.push(new_x);
         }
-        lhs.env().create_tensor(rhs.dimensions().to_vec(), result_buf)
+        lhs.env().create_tensor(rhs.dimensions().clone(), result_buf)
     }
 
     fn grad<'env>(&self, lhs: &Tensor<'env, BlasEnv>, lhs_grad: &Option<Tensor<'env, BlasEnv>>, rhs: &Tensor<'env, BlasEnv>, rhs_grad: &Option<Tensor<'env, BlasEnv>>) -> Option<Tensor<'env, BlasEnv>> {
@@ -40,7 +40,7 @@ impl BinaryTensorOp<BlasEnv> for BinOpPolynomial {
             (Some(lhs_grad), None) => {
                 if lhs_grad.is_scalar() {
                     let mut grad = vec![];
-                    let poly_dim = lhs.dimensions()[0];
+                    let poly_dim = lhs.dimensions().raw()[0];
                     let lhs_grad = lhs_grad.buf().read().unwrap()[0];
 
                     for x in rhs.buf().read().unwrap().iter() {
@@ -50,9 +50,9 @@ impl BinaryTensorOp<BlasEnv> for BinOpPolynomial {
                             x_pow *= x;
                         }
                     }
-                    let mut grad_dimensions = rhs.dimensions().to_vec();
+                    let mut grad_dimensions = rhs.dimensions().raw().to_vec();
                     grad_dimensions.push(poly_dim);
-                    Some(lhs.env().create_tensor(grad_dimensions, grad))
+                    Some(lhs.env().create_tensor(grad_dimensions.into(), grad))
                 }
                 else {
                     todo!()
@@ -69,9 +69,9 @@ impl BinaryTensorOp<BlasEnv> for BinOpPolynomial {
 #[cfg(test)]
 mod test {
     use rstest::rstest;
+    use crate::dimension::DimensionKind;
 
     use crate::operations::binop_polynomial::BinOpPolynomial;
-    use crate::tensor::{DimensionKind, Tensor};
     use crate::tensor_env::{BlasEnv, TensorEnv};
     use crate::tracker::{BinaryTensorOp, ExecutionTracker, RegularExecutionTracker, TrackerExpression};
 
@@ -93,7 +93,7 @@ mod test {
         let poly_coefficients = env.vector(vec!(1.0, 2.0, 3.0, 4.0), DimensionKind::Polynomial);
         let x = env.scalar(2.0);
 
-        let mut tracker = RegularExecutionTracker::new();
+        let tracker = RegularExecutionTracker::new();
         let calc_result = tracker.calc(TrackerExpression::Binary(poly_coefficients.clone(), x.clone(), Box::new(BinOpPolynomial {})));
         calc_result.assert_pretty_much_equal_to(&env.scalar(1.0 + 4.0 + 12.0 + 32.0));
 

@@ -1,5 +1,6 @@
 use std::cmp::Ordering;
-use crate::tensor::{Dimension, Tensor};
+use crate::dimension::{Dimension, Dimensions};
+use crate::tensor::Tensor;
 use crate::tensor_env::{BlasEnv, TensorEnv};
 
 pub enum FitDimensionsResult {
@@ -52,12 +53,12 @@ pub fn chunk_wise_bin_op<'env>(
     let lhs_dim = lhs.dimensions();
     let rhs_dim = rhs.dimensions();
 
-    if is_commutative && rhs_dim.len() > lhs_dim.len() {
+    if is_commutative && rhs_dim.raw().len() > lhs_dim.raw().len() {
         // implementations (especially BLAS based) tend to be optimized for LHS > RHS
-        _chunk_wise_bin_op(&rhs_buf, &lhs_buf, rhs_dim, lhs_dim, chunk_op, lhs.env())
+        _chunk_wise_bin_op(&rhs_buf, &lhs_buf, rhs_dim.raw(), lhs_dim.raw(), chunk_op, lhs.env())
     }
     else {
-        _chunk_wise_bin_op(&lhs_buf, &rhs_buf, lhs_dim, rhs_dim, chunk_op, lhs.env())
+        _chunk_wise_bin_op(&lhs_buf, &rhs_buf, lhs_dim.raw(), rhs_dim.raw(), chunk_op, lhs.env())
     }
 }
 
@@ -118,7 +119,7 @@ fn _chunk_wise_bin_op<'env>(
             }
         }
     }
-    env.create_tensor(result_dim, result_buf)
+    env.create_tensor(result_dim.into(), result_buf)
 }
 
 

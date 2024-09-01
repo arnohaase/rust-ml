@@ -1,5 +1,5 @@
-use async_std::task::block_on;
-use crate::tensor::{Dimension, DimensionKind, Tensor};
+use crate::dimension::{Dimension, DimensionKind};
+use crate::tensor::Tensor;
 use crate::tensor_env::{BlasEnv, TensorEnv, WgpuEnv};
 
 
@@ -41,11 +41,11 @@ pub fn tensor_from_spec<'a, E: TensorEnv>(spec: &str, env: &'a E) -> Tensor<'a, 
             len,
             kind,
         })
-        .collect();
+        .collect::<Vec<_>>();
 
     let buf = parse_numbers(spec);
 
-    env.create_tensor(dimensions, buf)
+    env.create_tensor(dimensions.into(), buf)
 }
 
 fn parse_numbers(spec: &str) -> Vec<f32> {
@@ -101,7 +101,7 @@ fn parse_dimension_sizes(spec: &str, num_dims: usize, depth: usize, offs: &mut u
 
 #[cfg(test)]
 mod test {
-    use crate::tensor::{Dimension, DimensionKind};
+    use crate::dimension::{Dimension, DimensionKind};
     use crate::tensor_env::{BlasEnv, TensorEnv};
     use crate::test_utils::tensor_factories::tensor_from_spec;
 
@@ -111,15 +111,15 @@ mod test {
 
         tensor_from_spec("9.1", &env).assert_pretty_much_equal_to(&env.scalar(9.1));
 
-        tensor_from_spec("R:[1]", &env).assert_pretty_much_equal_to(&env.create_tensor(vec![Dimension { len: 1, kind: DimensionKind::Regular }], vec![1.0]));
+        tensor_from_spec("R:[1]", &env).assert_pretty_much_equal_to(&env.create_tensor(vec![Dimension { len: 1, kind: DimensionKind::Regular }].into(), vec![1.0]));
         tensor_from_spec("R-P:[[1,3][5,7]]", &env).assert_pretty_much_equal_to(&env.create_tensor(vec![
             Dimension { len: 2, kind: DimensionKind::Regular },
             Dimension { len: 2, kind: DimensionKind::Polynomial },
-        ], vec![1.0, 3.0, 5.0, 7.0]));
+        ].into(), vec![1.0, 3.0, 5.0, 7.0])); //TODO use factory
         tensor_from_spec("C-R-P:[[[[1,2]][[[3,4]][[5,6]]]", &env).assert_pretty_much_equal_to(&env.create_tensor(vec![
             Dimension { len: 3, kind: DimensionKind::Collection },
             Dimension { len: 1, kind: DimensionKind::Regular },
             Dimension { len: 2, kind: DimensionKind::Polynomial },
-        ], vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]));
+        ].into(), vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]));
     }
 }

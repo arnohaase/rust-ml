@@ -21,7 +21,7 @@ pub fn sum_raw<'env>(tensor: &Tensor<'env, BlasEnv>, divide_by_len: bool) -> Ten
     let dim = tensor.dimensions();
     //TODO verify that the outermost dimension has kind 'collection'? Generalize to sum on a selectable dimension? With assertable kind?
     let buf = &tensor.buf().read().unwrap();
-    match dim.len() {
+    match dim.raw().len() {
         0 => panic!("called sum() on a scalar"),
         1 => {
             // this is an optimization for the important special case of summarizing scalars
@@ -29,10 +29,10 @@ pub fn sum_raw<'env>(tensor: &Tensor<'env, BlasEnv>, divide_by_len: bool) -> Ten
             if divide_by_len {
                 sum /= buf.len() as f32;
             }
-            tensor.env().create_tensor(vec![], vec![sum])
+            tensor.env().create_tensor(vec![].into(), vec![sum])
         }
         _ => {
-            let result_dim = dim[1..].to_vec();
+            let result_dim = dim.raw()[1..].to_vec();
             let chunk_size = result_dim.iter().map(|d| d.len).product();
             let mut result_buf = buf[0..chunk_size].to_vec();
 
@@ -43,11 +43,11 @@ pub fn sum_raw<'env>(tensor: &Tensor<'env, BlasEnv>, divide_by_len: bool) -> Ten
             }
             if divide_by_len {
                 unsafe {
-                    sscal(chunk_size as i32, 1.0 / dim[0].len as f32, &mut result_buf, 1);
+                    sscal(chunk_size as i32, 1.0 / dim.raw()[0].len as f32, &mut result_buf, 1);
                 }
             }
 
-            tensor.env().create_tensor(result_dim, result_buf)
+            tensor.env().create_tensor(result_dim.into(), result_buf)
         }
     }
 }
