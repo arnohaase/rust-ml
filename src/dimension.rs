@@ -192,13 +192,17 @@ mod test {
     #[case::scalar_scalar("", "", MatchDimensionsResult::Equal)]
     #[case::scalar_vec("", "C3", MatchDimensionsResult::RightContainsLeft {num_wrapper_dims: 1, num_nested_dims: 0})]
     #[case::vec_scalar("C3", "", MatchDimensionsResult::LeftContainsRight {num_wrapper_dims: 1, num_nested_dims: 0})]
+    #[case::left_suffix("C3-C2", "C3", MatchDimensionsResult::LeftContainsRight {num_wrapper_dims: 0, num_nested_dims: 1})]
+    #[case::left_prefix("C3-C2", "C2", MatchDimensionsResult::LeftContainsRight {num_wrapper_dims: 1, num_nested_dims: 0})]
+    #[case::left_suffix_same("C2-C2", "C2", MatchDimensionsResult::LeftContainsRight {num_wrapper_dims: 1, num_nested_dims: 0})]
+    #[case::left_prefix_same("C3-C2-C2", "C2", MatchDimensionsResult::LeftContainsRight {num_wrapper_dims: 2, num_nested_dims: 0})]
+    #[case::left_prefix_suffix("C3-C2-R2", "C2", MatchDimensionsResult::LeftContainsRight {num_wrapper_dims: 1, num_nested_dims: 1})]
+    #[case::right_suffix("C3", "C3-C2", MatchDimensionsResult::RightContainsLeft {num_wrapper_dims: 0, num_nested_dims: 1})]
+    #[case::right_prefix("C2", "C3-C2", MatchDimensionsResult::RightContainsLeft {num_wrapper_dims: 1, num_nested_dims: 0})]
+    #[case::right_suffix_same("C2", "C2-C2", MatchDimensionsResult::RightContainsLeft {num_wrapper_dims: 1, num_nested_dims: 0})]
+    #[case::right_prefix_same("C2", "C3-C2-C2", MatchDimensionsResult::RightContainsLeft {num_wrapper_dims: 2, num_nested_dims: 0})]
+    #[case::right_prefix_suffix("C2", "C3-C2-R2", MatchDimensionsResult::RightContainsLeft {num_wrapper_dims: 1, num_nested_dims: 1})]
     fn test_match_with_other(#[case] dim_a_spec: &str, #[case] dim_b_spec: &str, #[case] expected: MatchDimensionsResult) {
         assert_eq!(dims(dim_a_spec).match_with_other(&dims(dim_b_spec)), expected);
     }
-
-    #[test]
-    fn test_fit_dimensions() {
-        todo!()
-    }
-
 }
