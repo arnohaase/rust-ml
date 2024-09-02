@@ -1,9 +1,9 @@
 use blas::saxpy;
 
-use crate::operations::calc_utils::chunk_wise_bin_op;
+use crate::operations::calc_utils_blas::chunk_wise_bin_op;
 use crate::operations::unop_minus::UnOpMinus;
 use crate::tensor::Tensor;
-use crate::tensor_env::BlasEnv;
+use crate::tensor_env::{BlasEnv, WgpuEnv};
 use crate::tracker::BinaryTensorOp;
 
 pub fn raw_minus<'env>(lhs: &Tensor<'env, BlasEnv>, rhs: &Tensor<'env, BlasEnv>) -> Tensor<'env, BlasEnv> {
@@ -50,5 +50,15 @@ impl BinaryTensorOp<BlasEnv> for BinOpMinus {
             (None, Some(rhs_grad)) => Some(UnOpMinus::raw_minus(rhs_grad)),
             (Some(lhs_grad), Some(rhs_grad)) => Some(raw_minus(lhs_grad, rhs_grad)),
         }
+    }
+}
+
+impl BinaryTensorOp<WgpuEnv> for BinOpMinus {
+    fn calc<'env>(&self, lhs: &Tensor<'env, WgpuEnv>, rhs: &Tensor<'env, WgpuEnv>) -> Tensor<'env, WgpuEnv> {
+        todo!()
+    }
+
+    fn grad<'env>(&self, lhs: &Tensor<'env, WgpuEnv>, lhs_grad: &Option<Tensor<'env, WgpuEnv>>, rhs: &Tensor<'env, WgpuEnv>, rhs_grad: &Option<Tensor<'env, WgpuEnv>>) -> Option<Tensor<'env, WgpuEnv>> {
+        todo!()
     }
 }

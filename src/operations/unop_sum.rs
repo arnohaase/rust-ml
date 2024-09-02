@@ -21,7 +21,7 @@ pub fn sum_raw<'env>(tensor: &Tensor<'env, BlasEnv>, divide_by_len: bool) -> Ten
     let dim = tensor.dimensions();
     //TODO verify that the outermost dimension has kind 'collection'? Generalize to sum on a selectable dimension? With assertable kind?
     let buf = &tensor.buf().read().unwrap();
-    match dim.raw().len() {
+    match dim.num_dims() {
         0 => panic!("called sum() on a scalar"),
         1 => {
             // this is an optimization for the important special case of summarizing scalars

@@ -1,6 +1,6 @@
 use crate::dimension::{Dimension, DimensionKind};
 use crate::tensor::Tensor;
-use crate::tensor_env::{BlasEnv, TensorEnv, WgpuEnv};
+use crate::tensor_env::TensorEnv;
 
 
 /// This function is meant for test fixtures: it parses a string representation for a tensor

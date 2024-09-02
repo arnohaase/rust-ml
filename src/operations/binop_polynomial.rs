@@ -61,7 +61,9 @@ impl BinaryTensorOp<BlasEnv> for BinOpPolynomial {
             (None, Some(rhs_grad)) => {
                 todo!()
             },
-            (Some(lhs_grad), Some(rhs_grad)) => todo!(),
+            (Some(lhs_grad), Some(rhs_grad)) => {
+                todo!()
+            },
         }
     }
 }

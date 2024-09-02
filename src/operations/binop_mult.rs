@@ -1,7 +1,7 @@
 use blas::sscal;
 
 use crate::operations::binop_plus::BinOpPlus;
-use crate::operations::calc_utils::chunk_wise_bin_op;
+use crate::operations::calc_utils_blas::chunk_wise_bin_op;
 use crate::tensor::Tensor;
 use crate::tensor_env::{BlasEnv, TensorEnv};
 use crate::tracker::BinaryTensorOp;

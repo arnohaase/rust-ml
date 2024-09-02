@@ -41,13 +41,13 @@ impl <'env, E: TensorEnv> Clone for Tensor<'env, E> {
 
 impl <'env, E: TensorEnv> Debug for Tensor<'env, E> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        if self.dimensions.raw().len() > 0 {
+        if self.dimensions.num_dims() > 0 {
             write!(f, "{:?}:", self.dimensions.raw().iter().map(|d| d.kind).collect::<Vec<_>>())?;
         }
 
         let buf = self.data();
 
-        match self.dimensions().raw().len() {
+        match self.dimensions().num_dims() {
             0 => write!(f, "{}", buf[0]),
             1 => write!(f, "{:?}", buf),
             _ => write_rec(f, buf.as_ref(), self.dimensions().raw()),
@@ -83,10 +83,10 @@ impl <'env, E: TensorEnv> Tensor<'env, E> {
     }
 
     pub fn is_scalar(&self) -> bool {
-        self.dimensions.raw().is_empty()
+        self.dimensions.num_dims() == 0
     }
     pub fn is_vector(&self) -> bool {
-        self.dimensions.raw().len() == 1
+        self.dimensions.num_dims() == 1
     }
 
     pub fn id(&self) -> u32 {
@@ -156,9 +156,7 @@ impl <'env> Tensor<'env, WgpuEnv> {
 
 #[cfg(test)]
 mod test {
-    use async_std::task::block_on;
     use rstest::rstest;
-    use crate::tensor_env::{BlasEnv, TensorEnv, WgpuEnv};
     use crate::test_utils::tensor_factories::tensor_from_spec;
     use crate::with_all_envs;
 
