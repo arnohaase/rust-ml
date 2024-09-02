@@ -190,6 +190,8 @@ mod test {
 
     #[rstest]
     #[case::scalar_scalar("", "", MatchDimensionsResult::Equal)]
+    #[case::right_prefix_suffix("C2", "C3", MatchDimensionsResult::Mismatch)]
+    #[case::right_prefix_suffix("C2", "R2", MatchDimensionsResult::Mismatch)]
     #[case::scalar_vec("", "C3", MatchDimensionsResult::RightContainsLeft {num_wrapper_dims: 1, num_nested_dims: 0})]
     #[case::vec_scalar("C3", "", MatchDimensionsResult::LeftContainsRight {num_wrapper_dims: 1, num_nested_dims: 0})]
     #[case::left_suffix("C3-C2", "C3", MatchDimensionsResult::LeftContainsRight {num_wrapper_dims: 0, num_nested_dims: 1})]
