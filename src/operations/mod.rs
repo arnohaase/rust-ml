@@ -6,3 +6,4 @@ mod unop_sum;
 pub mod unop_avg;
 mod unop_minus;
 mod calc_utils_blas;
+mod calc_utils_wgpu;

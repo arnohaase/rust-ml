@@ -1,5 +1,5 @@
 use crate::tensor::Tensor;
-use crate::tensor_env::{BlasEnv, TensorEnv};
+use crate::tensor_env::{BlasEnv, TensorEnv, WgpuEnv};
 use crate::tracker::BinaryTensorOp;
 
 /// treats the first argument (which must be a vector) as scalar coefficients in a polynomial,
@@ -65,6 +65,16 @@ impl BinaryTensorOp<BlasEnv> for BinOpPolynomial {
                 todo!()
             },
         }
+    }
+}
+
+impl BinaryTensorOp<WgpuEnv> for BinOpPolynomial {
+    fn calc<'env>(&self, lhs: &Tensor<'env, WgpuEnv>, rhs: &Tensor<'env, WgpuEnv>) -> Tensor<'env, WgpuEnv> {
+        todo!()
+    }
+
+    fn grad<'env>(&self, lhs: &Tensor<'env, WgpuEnv>, lhs_grad: &Option<Tensor<'env, WgpuEnv>>, rhs: &Tensor<'env, WgpuEnv>, rhs_grad: &Option<Tensor<'env, WgpuEnv>>) -> Option<Tensor<'env, WgpuEnv>> {
+        todo!()
     }
 }
 

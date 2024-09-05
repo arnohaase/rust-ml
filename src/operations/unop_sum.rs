@@ -1,7 +1,7 @@
 use blas::{saxpy, sscal};
 
 use crate::tensor::Tensor;
-use crate::tensor_env::{BlasEnv, TensorEnv};
+use crate::tensor_env::{BlasEnv, TensorEnv, WgpuEnv};
 use crate::tracker::UnaryTensorOp;
 
 #[derive(Debug)]
@@ -22,7 +22,7 @@ pub fn sum_raw<'env>(tensor: &Tensor<'env, BlasEnv>, divide_by_len: bool) -> Ten
     //TODO verify that the outermost dimension has kind 'collection'? Generalize to sum on a selectable dimension? With assertable kind?
     let buf = &tensor.buf().read().unwrap();
     match dim.num_dims() {
-        0 => panic!("called sum() on a scalar"),
+        0 => tensor.clone_with_new_id(),
         1 => {
             // this is an optimization for the important special case of summarizing scalars
             let mut sum = buf.iter().sum();
@@ -51,3 +51,69 @@ pub fn sum_raw<'env>(tensor: &Tensor<'env, BlasEnv>, divide_by_len: bool) -> Ten
         }
     }
 }
+
+
+impl UnaryTensorOp<WgpuEnv> for UnOpSum {
+    fn calc<'env>(&self, tensor: &Tensor<'env, WgpuEnv>) -> Tensor<'env, WgpuEnv> {
+        if tensor.is_scalar() {
+            return tensor.clone_with_new_id()
+        }
+
+
+
+        todo!()
+    }
+
+    fn grad<'env>(&self, t: &Tensor<'env, WgpuEnv>, t_grad: &Option<Tensor<'env, WgpuEnv>>) -> Option<Tensor<'env, WgpuEnv>> {
+        todo!()
+    }
+}
+
+
+
+
+/*
+
+// Constants defining the workgroup size
+const WORKGROUP_SIZE: u32 = 64;
+
+// The input buffer containing the array elements
+@group(0) @binding(0) var<storage, read> inputArray: array<f32>;
+
+// The output buffer where the final sum will be stored
+@group(0) @binding(1) var<storage, read_write> outputSum: f32;
+
+// Shared memory for workgroup reduction
+var<workgroup> localSum: array<f32, WORKGROUP_SIZE>;
+
+@compute @workgroup_size(WORKGROUP_SIZE)
+fn main(@builtin(global_invocation_id) global_id: vec3<u32>,
+        @builtin(local_invocation_id) local_id: vec3<u32>,
+        @builtin(workgroup_id) workgroup_id: vec3<u32>) {
+
+    // Step 1: Each thread loads its corresponding element
+    let index = global_id.x;
+    let value = inputArray[index];
+
+    // Step 2: Perform local reduction
+    localSum[local_id.x] = value;
+    workgroupBarrier();
+
+    // Perform parallel reduction within the workgroup
+    var step = WORKGROUP_SIZE / 2;
+    while (step > 0) {
+        if (local_id.x < step) {
+            localSum[local_id.x] += localSum[local_id.x + step];
+        }
+        step = step / 2;
+        workgroupBarrier();
+    }
+
+    // Step 3: The first thread in the workgroup writes the local sum to the output buffer
+    if (local_id.x == 0) {
+        atomicAdd(&outputSum, localSum[0]);
+    }
+}
+
+
+ */

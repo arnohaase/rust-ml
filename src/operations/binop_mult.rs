@@ -2,8 +2,9 @@ use blas::sscal;
 
 use crate::operations::binop_plus::BinOpPlus;
 use crate::operations::calc_utils_blas::chunk_wise_bin_op;
+use crate::operations::calc_utils_wgpu::call_shader_binop;
 use crate::tensor::Tensor;
-use crate::tensor_env::{BlasEnv, TensorEnv};
+use crate::tensor_env::{BlasEnv, TensorEnv, WgpuEnv};
 use crate::tracker::BinaryTensorOp;
 
 #[derive(Debug)]
@@ -74,26 +75,51 @@ fn raw_mult_chunk_blas(n: usize, rhs: &[f32], inc_rhs: usize, lhs: &mut[f32], in
 }
 
 
+impl BinaryTensorOp<WgpuEnv> for BinOpMult {
+    fn calc<'env>(&self, lhs: &Tensor<'env, WgpuEnv>, rhs: &Tensor<'env, WgpuEnv>) -> Tensor<'env, WgpuEnv> {
+        call_shader_binop(lhs, rhs, "*", include_str!("binop_mult.wgsl"), None)
+    }
+
+    fn grad<'env>(&self, lhs: &Tensor<'env, WgpuEnv>, lhs_grad: &Option<Tensor<'env, WgpuEnv>>, rhs: &Tensor<'env, WgpuEnv>, rhs_grad: &Option<Tensor<'env, WgpuEnv>>) -> Option<Tensor<'env, WgpuEnv>> {
+        match (lhs_grad, rhs_grad) {
+            (None, None) => None,
+            (Some(lhs_grad), None) => Some(BinOpMult{}.calc(lhs_grad, rhs)),
+            (None, Some(rhs_grad)) => Some(BinOpMult{}.calc(lhs, rhs_grad)),
+            (Some(lhs_grad), Some(rhs_grad)) => Some(BinOpPlus{}.calc(
+                &BinOpMult{}.calc(lhs_grad, rhs),
+                &BinOpMult{}.calc(lhs, rhs_grad),
+            ))
+        }
+    }
+}
+
 #[cfg(test)]
 mod test {
     use rstest::rstest;
 
-    use crate::operations::binop_mult::raw_mult_blas;
-    use crate::tensor_env::BlasEnv;
+    use crate::operations::binop_mult::BinOpMult;
     use crate::test_utils::tensor_factories::tensor_from_spec;
+    use crate::tracker::BinaryTensorOp;
+    use crate::with_all_envs;
 
     #[rstest]
-    #[case("C:[1,2,3]", "C-P:[[3,4][5,6][7,8]]", "C-P:[[3,4][10,12][21,24]]")]
-    fn test_calc(#[case] lhs_spec: &str, #[case] rhs_spec: &str, #[case] expected_spec: &str) {
-        let env = BlasEnv{};
+    #[case::scalar("2.0", "3.0", "6.0")]
+    #[case::simple_vec("R:[1, 2, 3]", "R:[4, 5, 6]", "R:[4, 10, 18]")]
+    #[case::nested_left("R-P:[[1,2][3,4]]", "R:[5,6]", "R-P:[[5, 10][18, 24]]")]
+    #[case::nested_right("R:[5,6]", "R-P:[[1,2][3,4]]", "R-P:[[5, 10][18, 24]]")]
+    #[case::collection_left("C-R:[[1,2,3][4,5,6]]", "R:[2,3,4]", "C-R:[[2,6,12][8,15,24]]")]
+    #[case::collection_right("R:[2,3,4]", "C-R:[[1,2,3][4,5,6]]", "C-R:[[2,6,12][8,15,24]]")]
+    #[case::both_left("C-R-P:[[[1,2,3]][[4,5,6]]]", "R:[.5]", "C-R-P:[[[0.5,1,1.5]][[2,2.5,3]]]")]
+    #[case::both_right("R:[.5]", "C-R-P:[[[1,2,3]][[4,5,6]]]", "C-R-P:[[[0.5,1,1.5]][[2,2.5,3]]]")]
+    fn test_mult(#[case] a: &str, #[case] b: &str, #[case] expected: &str) {
+        with_all_envs!(env => {
+            let a = tensor_from_spec(a, &env);
+            let b = tensor_from_spec(b, &env);
+            let c = BinOpMult{}.calc(&a, &b);
 
-        let lhs = tensor_from_spec(lhs_spec, &env);
-        let rhs = tensor_from_spec(rhs_spec, &env);
-        let expected = tensor_from_spec(expected_spec, &env);
-
-        println!("{:?} * {:?} ?= {:?}", lhs, rhs, expected);
-        raw_mult_blas(&lhs, &rhs).assert_pretty_much_equal_to(&expected);
-        raw_mult_blas(&rhs, &lhs).assert_pretty_much_equal_to(&expected);
+            c.assert_pretty_much_equal_to(&tensor_from_spec(expected, &env));
+        })
     }
-}
 
+    //TODO test grad
+}

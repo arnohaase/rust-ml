@@ -63,7 +63,8 @@ fn _chunk_wise_bin_op<'env>(
             result_dim = rhs_dim.clone();
 
             let nested_size = rhs_dim.size_inner(num_nested_dims);
-            let chunk_size = rhs_dim.size_outer(num_wrapper_dims);
+            let chunk_size = rhs_dim.size_without_outer(num_wrapper_dims);
+
             for rhs_chunk in rhs_buf.chunks(chunk_size) {
                 let chunk_offs = result_buf.len();
                 for lhs_el in lhs_buf.iter() {
@@ -71,7 +72,6 @@ fn _chunk_wise_bin_op<'env>(
                         result_buf.push(*lhs_el);
                     }
                 }
-
                 chunk_op(chunk_size, rhs_chunk, 1, &mut result_buf[chunk_offs..], 1);
             }
         }

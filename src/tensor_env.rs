@@ -107,8 +107,6 @@ impl WgpuEnv {
             compilation_options: Default::default(),
             cache: None,
         });
-        // let bind_group_layout = pipeline.get_bind_group_layout(0);
-
 
         let new_shader = Arc::new(CachedWgpuShader {
             id: id.to_string(),

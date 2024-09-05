@@ -1,6 +1,8 @@
 use blas::saxpy;
+use crate::operations::binop_plus::BinOpPlus;
 
 use crate::operations::calc_utils_blas::chunk_wise_bin_op;
+use crate::operations::calc_utils_wgpu::call_shader_binop;
 use crate::operations::unop_minus::UnOpMinus;
 use crate::tensor::Tensor;
 use crate::tensor_env::{BlasEnv, WgpuEnv};
@@ -55,10 +57,45 @@ impl BinaryTensorOp<BlasEnv> for BinOpMinus {
 
 impl BinaryTensorOp<WgpuEnv> for BinOpMinus {
     fn calc<'env>(&self, lhs: &Tensor<'env, WgpuEnv>, rhs: &Tensor<'env, WgpuEnv>) -> Tensor<'env, WgpuEnv> {
-        todo!()
+        call_shader_binop(lhs, rhs, "-", include_str!("binop_minus.wgsl"), Some(include_str!("binop_minus_r.wgsl")))
     }
 
-    fn grad<'env>(&self, lhs: &Tensor<'env, WgpuEnv>, lhs_grad: &Option<Tensor<'env, WgpuEnv>>, rhs: &Tensor<'env, WgpuEnv>, rhs_grad: &Option<Tensor<'env, WgpuEnv>>) -> Option<Tensor<'env, WgpuEnv>> {
-        todo!()
+    fn grad<'env>(&self, _lhs: &Tensor<'env, WgpuEnv>, lhs_grad: &Option<Tensor<'env, WgpuEnv>>, _rhs: &Tensor<'env, WgpuEnv>, rhs_grad: &Option<Tensor<'env, WgpuEnv>>) -> Option<Tensor<'env, WgpuEnv>> {
+        match (lhs_grad, rhs_grad) {
+            (None, None) => None,
+            (Some(lhs_grad), None) => Some(lhs_grad.clone_with_new_id()),
+            (None, Some(rhs_grad)) => todo!("Some(-rhs_grad.clone_with_new_id())"),
+            (Some(lhs_grad), Some(rhs_grad)) => Some(self.calc(lhs_grad, rhs_grad)),
+        }
     }
+}
+
+#[cfg(test)]
+mod test {
+    use rstest::rstest;
+    use crate::operations::binop_minus::BinOpMinus;
+    use crate::test_utils::tensor_factories::tensor_from_spec;
+    use crate::tracker::BinaryTensorOp;
+    use crate::with_all_envs;
+
+    #[rstest]
+    #[case::scalar("1.0", "2.0", "-1.0")]
+    #[case::simple_vec("R:[1, 2, 3]", "R:[4, 5, 6]", "R:[-3, -3, -3]")]
+    #[case::nested_left("R-P:[[1,2][3,4]]", "R:[5,6]", "R-P:[[-4,-3][-3,-2]]")]
+    #[case::nested_right("R:[5,6]", "R-P:[[1,2][3,4]]", "R-P:[[4,3][3,2]]")]
+    #[case::collection_left("C-R:[[1,2,3][4,5,6]]", "R:[2,3,4]", "C-R:[[-1,-1,-1][2,2,2]]")]
+    #[case::collection_right("R:[2,3,4]", "C-R:[[1,2,3][4,5,6]]", "C-R:[[1,1,1][-2,-2,-2]]")]
+    #[case::both_left("C-R-P:[[[1,2,3]][[4,5,6]]]", "R:[.5]", "C-R-P:[[[0.5,1.5,2.5]][[3.5,4.5,5.5]]]")]
+    #[case::both_right("R:[.5]", "C-R-P:[[[1,2,3]][[4,5,6]]]", "C-R-P:[[[-0.5,-1.5,-2.5]][[-3.5,-4.5,-5.5]]]")]
+    fn test_minus(#[case] a: &str, #[case] b: &str, #[case] expected: &str) {
+        with_all_envs!(env => {
+            let a = tensor_from_spec(a, &env);
+            let b = tensor_from_spec(b, &env);
+            let c = BinOpMinus{}.calc(&a, &b);
+
+            c.assert_pretty_much_equal_to(&tensor_from_spec(expected, &env));
+        })
+    }
+
+    //TODO test grad
 }

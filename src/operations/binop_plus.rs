@@ -3,6 +3,7 @@ use triomphe::Arc;
 use crate::dimension::MatchDimensionsResult;
 
 use crate::operations::calc_utils_blas::chunk_wise_bin_op;
+use crate::operations::calc_utils_wgpu::call_shader_binop;
 use crate::tensor::Tensor;
 use crate::tensor_env::{BlasEnv, WgpuEnv};
 use crate::tracker::BinaryTensorOp;
@@ -88,22 +89,7 @@ impl BinaryTensorOp<BlasEnv> for BinOpPlus {
 
 impl BinaryTensorOp<WgpuEnv> for BinOpPlus {
     fn calc<'env>(&self, lhs: &Tensor<'env, WgpuEnv>, rhs: &Tensor<'env, WgpuEnv>) -> Tensor<'env, WgpuEnv> {
-        match lhs.dimensions().match_with_other(rhs.dimensions()) {
-            MatchDimensionsResult::Mismatch => todo!("dimension mismatch"),
-            MatchDimensionsResult::Equal => plus_wgpu_left_interleaved_dim(lhs, rhs, 1, lhs.buf().size() as usize, 1),
-            MatchDimensionsResult::LeftContainsRight { num_wrapper_dims, num_nested_dims } => {
-                let num_chunks = lhs.dimensions().size_outer(num_wrapper_dims);
-                let chunk_size = lhs.dimensions().size_without_outer(num_wrapper_dims);
-                let num_interleaved: usize = lhs.dimensions().size_inner(num_nested_dims);
-                plus_wgpu_left_interleaved_dim(lhs, rhs, num_chunks, chunk_size, num_interleaved)
-            },
-            MatchDimensionsResult::RightContainsLeft { num_wrapper_dims, num_nested_dims } => {
-                let num_chunks = rhs.dimensions().size_outer(num_wrapper_dims);
-                let chunk_size = rhs.dimensions().size_without_outer(num_wrapper_dims);
-                let num_interleaved: usize = rhs.dimensions().size_inner(num_nested_dims);
-                plus_wgpu_left_interleaved_dim(rhs, lhs, num_chunks, chunk_size, num_interleaved)
-            }
-        }
+        call_shader_binop(lhs, rhs, "+", include_str!("binop_plus.wgsl"), None)
     }
 
     fn grad<'env>(&self, _lhs: &Tensor<'env, WgpuEnv>, lhs_grad: &Option<Tensor<'env, WgpuEnv>>, _rhs: &Tensor<'env, WgpuEnv>, rhs_grad: &Option<Tensor<'env, WgpuEnv>>) -> Option<Tensor<'env, WgpuEnv>> {
@@ -114,38 +100,6 @@ impl BinaryTensorOp<WgpuEnv> for BinOpPlus {
             (Some(lhs_grad), Some(rhs_grad)) => Some(self.calc(lhs_grad, rhs_grad)),
         }
     }
-}
-
-fn plus_wgpu_left_interleaved_dim<'env>(lhs: &Tensor<'env, WgpuEnv>, rhs: &Tensor<'env, WgpuEnv>, num_chunks: usize, chunk_size: usize, interleave_size: usize) -> Tensor<'env, WgpuEnv> {
-    let shader = lhs.env().shader(&format!("+:{interleave_size}:{chunk_size}"), || include_str!("binop_plus.wgsl")
-        .replace("{n}", &interleave_size.to_string())
-        .replace("{chunk_size}", &chunk_size.to_string())
-    );
-
-    let result_buf = lhs.env().create_storage_buffer(lhs.buf().size());
-
-    let bind_group = shader.bind_group(lhs.env(), vec![
-        lhs.buf().as_entire_binding(),
-        rhs.buf().as_entire_binding(),
-        result_buf.as_entire_binding(),
-    ]);
-
-    let mut encoder = lhs.env().device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some(&shader.id) });
-    {
-        let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-            label: Some(&shader.id),
-            timestamp_writes: None,
-        });
-        cpass.set_pipeline(&shader.compute_pipeline);
-        cpass.set_bind_group(0, &bind_group, &[]);
-        cpass.dispatch_workgroups(1, num_chunks as u32, 1);
-    }
-
-    //TODO split chunk parallelism inside and across workgroups
-
-    lhs.env().queue.submit(Some(encoder.finish()));
-
-    Tensor::create_from_raw(lhs.env(), lhs.dimensions().clone(), Arc::new(result_buf))
 }
 
 #[cfg(test)]
