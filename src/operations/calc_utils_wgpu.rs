@@ -1,6 +1,7 @@
 use triomphe::Arc;
+use wgpu::BufferAddress;
 
-use crate::dimension::MatchDimensionsResult;
+use crate::dimension::{Dimensions, MatchDimensionsResult};
 use crate::tensor::Tensor;
 use crate::tensor_env::WgpuEnv;
 
@@ -78,4 +79,38 @@ fn apply_binop_shader<'env>(
 
     lhs.env().queue.submit(Some(encoder.finish()));
     Tensor::create_from_raw(lhs.env(), leading_tensor.dimensions().clone(), Arc::new(result_buf))
+}
+
+pub fn apply_unop_shader<'env>(
+    tensor: &Tensor<'env, WgpuEnv>,
+    result_dimensions: Dimensions,
+    shader_id: &str,
+    shader_template: &str,
+) -> Tensor<'env, WgpuEnv> {
+    let shader = tensor.env().shader(
+        &shader_id,
+        || shader_template
+            .replace("{workgroup_size}", "64") //TODO workgroup size
+    );
+
+    let result_buf = tensor.env().create_storage_buffer((result_dimensions.size() * size_of::<f32>()) as BufferAddress);
+
+    let bind_group = shader.bind_group(tensor.env(), vec![
+        tensor.buf().as_entire_binding(),
+        result_buf.as_entire_binding(),
+    ]);
+
+    let mut encoder = tensor.env().device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some(&shader.id) });
+    {
+        let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+            label: Some(&shader.id),
+            timestamp_writes: None,
+        });
+        cpass.set_pipeline(&shader.compute_pipeline);
+        cpass.set_bind_group(0, &bind_group, &[]);
+        cpass.dispatch_workgroups(1, (result_dimensions.size() / 64) as u32, 1); //TODO workgroup size
+    }
+
+    tensor.env().queue.submit(Some(encoder.finish()));
+    Tensor::create_from_raw(tensor.env(), result_dimensions, Arc::new(result_buf))
 }

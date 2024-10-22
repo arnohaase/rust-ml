@@ -97,7 +97,7 @@ impl WgpuEnv {
 
         let module = self.device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some(id),
-            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(&wgsl())),
+            source: wgpu::ShaderSource::Wgsl(Cow::Owned(wgsl())),
         });
         let compute_pipeline = self.device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
             label: Some(id),
